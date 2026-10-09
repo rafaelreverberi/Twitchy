@@ -40,6 +40,9 @@ struct RootView: View {
                 if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } }
             }
         }
+        .onChange(of: model.playback.pictureInPictureActive) { _, active in
+            if !active, scenePhase == .background { Task { await model.playback.stop() } }
+        }
         .onChange(of: model.auth.status) { _, _ in Task { await model.refresh() } }
         .onChange(of: model.auth.session?.accessToken) { _, _ in Task { await model.refresh() } }
         .onChange(of: model.sources.active?.baseURL) { _, _ in Task { await model.playback.stop() } }
