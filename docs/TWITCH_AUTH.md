@@ -7,6 +7,15 @@ Sources checked against official documentation on 2026-10-09:
 - https://dev.twitch.tv/docs/authentication/scopes/
 
 ## Browser flow: iPhone, iPad and Mac
+
+For this repository, use the GitHub Pages callback:
+```text
+https://rafaelreverberi.github.io/Twitchy/oauth-callback.html
+```
+Add it to Twitch Developer Console → OAuth Redirect URLs (click Add), and use the identical URL in Twitchy → Profile → Settings → Registered redirect URI. It is the application's default when no custom URI is saved. Use your real public Browser OAuth Client ID. A placeholder URL cannot complete real sign-in. No client secret is needed for this flow.
+
+The Pages workflow publishes only `docs/oauth-callback.html` and the static setup index, with no external scripts or analytics. The callback is public HTML; access tokens remain in the URL fragment and are not committed or uploaded to the repository. GitHub receives normal hosting request metadata. A fork must host its own callback and change both the app default and registered URL.
+
 Register your own Twitch developer application for the documented implicit flow. Twitch's ordinary Developer Console registration does not reliably accept custom URI callbacks. **Register an owned HTTPS callback page**, for example `https://auth.your-domain.com/twitchy/callback.html`, and configure that exact URL in Twitchy. Do not register `twitchy://oauth` at Twitch.
 
 Host the supplied `docs/oauth-callback.html` as a static page on a domain you control, with trusted HTTPS. It reads Twitch's response fragment in the browser, clears browser history's fragment and forwards it to `twitchy://oauth`, which ASWebAuthenticationSession intercepts. It makes no network calls and stores no token. Configure hosting with no third-party scripts, analytics or content injection and a restrictive Content-Security-Policy; do not use your streaming source as the callback host. The URL fragment is not sent in HTTP requests, but the page's script sees it, so ownership and integrity of this page are essential. The page is a static return bridge, not a confidential OAuth server.

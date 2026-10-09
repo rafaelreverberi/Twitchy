@@ -1,0 +1,41 @@
+name: OAuth callback on GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/oauth-callback.html
+      - docs/pages-index.html
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Prepare the static callback site
+        run: |
+          mkdir -p _site
+          cp docs/oauth-callback.html _site/oauth-callback.html
+          cp docs/pages-index.html _site/index.html
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy callback site
+        id: deployment
+        uses: actions/deploy-pages@v4

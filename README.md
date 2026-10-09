@@ -68,7 +68,10 @@ Real macOS captures (logged out; no claim of real Twitch streaming):
 
 Original code is [MIT licensed](LICENSE). The license does not confer Twitch content, trademark or distribution rights. Review applicable Twitch API, player and advertising requirements before public distribution; implementation is not approval.
 
-This repository is prepared locally. Publish privately only when authorized:
-```sh
-gh repo create Twitchy --private --source=. --remote=origin --push
+The repository is published at [rafaelreverberi/Twitchy](https://github.com/rafaelreverberi/Twitchy).
+
+The browser OAuth return page is hosted through GitHub Pages:
+```text
+https://rafaelreverberi.github.io/Twitchy/oauth-callback.html
 ```
+Register this exact URL in Twitch and set your own public Client ID in Twitchy. See [OAuth setup](docs/TWITCH_AUTH.md). The Pages workflow publishes only the callback and setup index; no Twitch credentials are included.

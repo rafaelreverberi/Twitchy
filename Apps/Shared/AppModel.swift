@@ -28,7 +28,7 @@ import TwitchyChat
     var localPlayback: URL?
     var clientID = UserDefaults.standard.string(forKey: "oauth.clientID") ?? "" { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID") } }
     var deviceClientID = UserDefaults.standard.string(forKey: "oauth.deviceClientID") ?? "" { didSet { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID") } }
-    var redirect = UserDefaults.standard.string(forKey: "oauth.redirect") ?? "" { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect") } }
+    var redirect = UserDefaults.standard.string(forKey: "oauth.redirect").flatMap { $0.isEmpty ? nil : $0 } ?? "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html" { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect") } }
     private var cachedAPI: TwitchAPIClient?
     private var cachedToken: String?
     var api: TwitchAPIClient? {
@@ -36,7 +36,7 @@ import TwitchyChat
         if cachedToken != session.accessToken { cachedAPI = TwitchAPIClient(clientID: session.clientID, token: session.accessToken); cachedToken = session.accessToken }
         return cachedAPI
     }
-    var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://your-owned-domain.example/twitchy/callback")!, deviceClientID: deviceClientID) }
+    var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async { await auth.restore(); await refresh() }
     func login(chat: Bool = false) async { await auth.login(configuration: configuration, chat: chat); await refresh() }
     private var refreshID = UUID()
