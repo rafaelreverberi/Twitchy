@@ -202,3 +202,18 @@ actor ValidationGate: HTTPTransport {
     #expect(throws: ClientError.self) { try manager.upsert(source) }
     #expect(manager.active?.baseURL.host == "first.example")
 }
+
+@Test @MainActor func downloadCancellationNeverContactsAnotherSource() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let job = try JSONCoding.decoder().decode(DownloadJob.self, from: Data("{\"id\":\"job-1\",\"status\":\"queued\",\"progress\":0,\"transferred_bytes\":0}".utf8))
+    let item = LocalDownload(sourceID: UUID(), job: job, contentType: "vod", contentID: "fixture", authorizationReference: "fixture-owner")
+    try JSONEncoder().encode([item]).write(to: directory.appendingPathComponent("index.json"))
+    let manager = DownloadManager(directory: directory)
+    let transport = FixtureTransport([])
+    let wrong = try StreamingSourceClient(source: .init(name: "Other source", baseURL: URL(string: "https://other.example")!), transport: transport)
+    await manager.cancel(item.id, client: wrong)
+    #expect(manager.items.first?.job.status == .cancelled)
+    #expect(await transport.requests.isEmpty)
+}

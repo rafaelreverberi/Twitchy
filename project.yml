@@ -1,0 +1,112 @@
+name: Twitchy
+options:
+  bundleIdPrefix: com.rafaelreverberi
+  deploymentTarget:
+    iOS: '17.0'
+    macOS: '14.0'
+    tvOS: '17.0'
+packages:
+  TwitchyKit:
+    path: Packages/TwitchyKit
+settings:
+  base:
+    PRODUCT_NAME: Twitchy
+    SWIFT_VERSION: '6.0'
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: '0.1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: Twitchy
+    INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
+    INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to a streaming source you configure on your local network.
+    INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SUPPORTS_MACCATALYST: NO
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+targets:
+  Twitchy-macOS:
+    type: application
+    platform: macOS
+    sources: [Apps/Shared, Resources]
+    info:
+      path: Apps/macOS/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [twitchy]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    dependencies: &deps
+      - package: TwitchyKit
+        product: TwitchyCore
+      - package: TwitchyKit
+        product: TwitchyAPI
+      - package: TwitchyKit
+        product: TwitchyAuth
+      - package: TwitchyKit
+        product: TwitchySources
+      - package: TwitchyKit
+        product: TwitchyPlayback
+      - package: TwitchyKit
+        product: TwitchyChat
+      - package: TwitchyKit
+        product: TwitchyDesignSystem
+  Twitchy-iOS:
+    type: application
+    platform: iOS
+    sources: [Apps/Shared, Resources]
+    settings:
+      TARGETED_DEVICE_FAMILY: '1,2'
+    info:
+      path: Apps/iOS/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [twitchy]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    dependencies: *deps
+  Twitchy-tvOS:
+    type: application
+    platform: tvOS
+    sources: [Apps/Shared, Resources]
+    info:
+      path: Apps/tvOS/Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    dependencies: *deps
+  TwitchyiOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests/UI]
+    settings:
+      PRODUCT_NAME: TwitchyiOSUITests
+    dependencies:
+      - target: Twitchy-iOS
+  TwitchyUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    settings:
+      PRODUCT_NAME: TwitchyUITests
+    sources: [Tests/UI]
+    dependencies:
+      - target: Twitchy-macOS
+schemes:
+  Twitchy-macOS:
+    build:
+      targets:
+        Twitchy-macOS: all
+    test:
+      targets: [TwitchyUITests]
+  Twitchy-iOS:
+    build:
+      targets:
+        Twitchy-iOS: all
+    test:
+      targets: [TwitchyiOSUITests]
+  Twitchy-tvOS:
+    build:
+      targets:
+        Twitchy-tvOS: all

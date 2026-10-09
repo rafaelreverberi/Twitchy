@@ -101,9 +101,11 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
         }
     }
     private func update(_ id: UUID, action: (inout LocalDownload) -> Void) { if let index = items.firstIndex(where: { $0.id == id }) { action(&items[index]) } }
-    public func cancel(_ id: UUID, client: StreamingSourceClient) async {
+    public func cancel(_ id: UUID, client: StreamingSourceClient? = nil) async {
         tasks[id]?.cancel(); transfers[id]?.cancel(); update(id) { $0.job.status = .cancelled }; save()
-        if let item = items.first(where: { $0.id == id }) { do { try await client.cancelDownload(item.job.id) } catch { self.error = "Cancelled locally. Source cancellation failed." } }
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        guard let client, client.source.id == item.sourceID else { error = "Cancelled locally. The original source is unavailable for server cleanup."; return }
+        do { try await client.cancelDownload(item.job.id) } catch { self.error = "Cancelled locally. Source cancellation failed." }
     }
     public func delete(_ id: UUID) throws {
         guard tasks[id] == nil else { throw ClientError.message("Cancel this download before deleting it.") }

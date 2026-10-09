@@ -31,6 +31,8 @@ public enum EventSubPolicy {
     private var task: Task<Void, Never>?
     private var watchdog: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
+    private var migratingSocket: URLSessionWebSocketTask?
+    private var migrationReader: Task<Void, Never>?
     private let network = URLSession(configuration: .ephemeral)
     private var lastMessage = Date()
     private var keepalive = 30
@@ -69,23 +71,38 @@ public enum EventSubPolicy {
                         case "session_welcome":
                             guard let session = envelope.payload.session else { throw ClientError.invalidResponse }
                             keepalive = session.keepaliveTimeoutSeconds ?? 30
+                            if migrated { migratingSocket?.cancel(with: .normalClosure, reason: nil); migratingSocket = nil; migrationReader?.cancel(); migrationReader = nil }
                             if !migrated { try await api.subscribeChat(sessionID: session.id, broadcasterID: broadcasterID, userID: userID) }
                             migrated = false; failures = 0; status = "Connected"; error = nil
                         case "notification":
-                            if let event = envelope.payload.event, !seen.contains(event.id) { messages.append(event); seen.append(event.id); messages = Array(messages.suffix(300)); seen = Array(seen.suffix(600)) }
+                            if let event = envelope.payload.event { append(event) }
                         case "session_reconnect":
                             guard let url = envelope.payload.session?.reconnectUrl else { throw ClientError.invalidResponse }
                             next = try EventSubPolicy.reconnectURL(url); migrated = true
-                            // A new welcome transfers existing subscriptions. Do not recreate them.
+                            migratingSocket = connection
+                            migrationReader = Task { [weak self] in
+                                do {
+                                    while !Task.isCancelled {
+                                        let frame = try await connection.receive()
+                                        let bytes: Data
+                                        switch frame { case .data(let value): bytes = value; case .string(let value): bytes = Data(value.utf8); @unknown default: continue }
+                                        let oldEnvelope = try JSONCoding.decoder().decode(EventSubEnvelope.self, from: bytes)
+                                        guard let self, generation == current else { return }
+                                        if let event = oldEnvelope.payload.event { append(event) }
+                                    }
+                                } catch { /* New socket or outer reconnect owns recovery. */ }
+                            }
+                            // Keep draining old messages until the new welcome transfers subscriptions.
                             break
                         case "revocation": throw ClientError.missingScope
                         default: break
                         }
                         if migrated { break }
                     }
-                    connection.cancel(with: .normalClosure, reason: nil)
+                    if !migrated { connection.cancel(with: .normalClosure, reason: nil) }
                 } catch {
                     connection.cancel(with: .goingAway, reason: nil)
+                    migratingSocket?.cancel(with: .goingAway, reason: nil); migratingSocket = nil; migrationReader?.cancel(); migrationReader = nil
                     guard !Task.isCancelled, generation == current else { break }
                     self.error = error.localizedDescription
                     if let typed = error as? ClientError, typed == .missingScope || typed == .unauthorized { status = "Reconnect Twitch to authorize chat"; break }
@@ -102,5 +119,9 @@ public enum EventSubPolicy {
         do { let response = try await api.sendChat(broadcasterID: broadcasterID, senderID: userID, text: text); guard response.isSent else { error = response.dropReason?.message ?? "Twitch did not accept this message."; return false }; error = nil; return true }
         catch { self.error = error.localizedDescription; return false }
     }
-    public func disconnect() { generation = UUID(); task?.cancel(); task = nil; watchdog?.cancel(); watchdog = nil; socket?.cancel(with: .normalClosure, reason: nil); socket = nil; status = "Disconnected"; badgeImages = [:] }
+    private func append(_ event: ChatMessage) {
+        guard !seen.contains(event.id) else { return }
+        messages.append(event); seen.append(event.id); messages = Array(messages.suffix(300)); seen = Array(seen.suffix(600))
+    }
+    public func disconnect() { migratingSocket?.cancel(with: .normalClosure, reason: nil); migratingSocket = nil; migrationReader?.cancel(); migrationReader = nil; generation = UUID(); task?.cancel(); task = nil; watchdog?.cancel(); watchdog = nil; socket?.cancel(with: .normalClosure, reason: nil); socket = nil; status = "Disconnected"; badgeImages = [:] }
 }

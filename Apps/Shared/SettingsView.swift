@@ -1,0 +1,165 @@
+import SwiftUI
+import TwitchyCore
+import TwitchySources
+import TwitchyDesignSystem
+
+struct ProfileView: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(spacing: 20) { RemoteImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? "Connect to follow your favorites").foregroundStyle(.secondary); Text(model.auth.status).font(.caption).foregroundStyle(TwitchyTheme.live) } }
+                if let error = model.auth.error { Notice(error) }
+                if model.auth.session == nil { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.clientID.isEmpty && model.deviceClientID.isEmpty) }
+                else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
+                Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
+                Divider()
+                Text("Favorites").font(.title2.bold())
+                if model.personal.data.favorites.isEmpty { Text("Save a favorite from any channel page.").foregroundStyle(.secondary) }
+                ForEach(model.personal.data.favorites, id: \.self) { login in HStack { Button(login) { model.open(login: login, name: login) }; Spacer(); Button { model.personal.favorite(login) } label: { Image(systemName: "star.slash") }.accessibilityLabel("Remove \(login) from favorites") } }
+                Text("Watch history").font(.title2.bold())
+                ForEach(model.personal.data.history) { entry in Button { model.open(login: entry.login, name: entry.title) } label: { HStack { Text(entry.title); Spacer(); Text(entry.watchedAt, style: .date).font(.caption).foregroundStyle(.secondary) } } }
+                if !model.personal.data.history.isEmpty { Button("Clear watch history", role: .destructive) { model.personal.data.history = [] } }
+                if let error = model.personal.error { Notice(error) }
+                Divider(); Text("Twitchy · 0.1.0").font(.headline); Text("Your streams. Your way.").foregroundStyle(.secondary); Text("An independent third-party client by Rafael Reverberi. Not affiliated with Twitch.").font(.caption).foregroundStyle(.secondary)
+            }.padding(28)
+        }
+    }
+}
+struct SettingsView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        @Bindable var model = model
+        @Bindable var personal = model.personal
+        NavigationStack {
+            Form {
+                Section("Twitch account") {
+                    TextField("Browser OAuth Client ID", text: $model.clientID).accessibilityIdentifier("oauth.clientID")
+                    TextField("Registered redirect URI", text: $model.redirect)
+                    TextField("Public Device Flow Client ID", text: $model.deviceClientID)
+                    Text("Client IDs are public configuration. Never enter a client secret.").font(.caption).foregroundStyle(.secondary)
+                    Button("Sign in with Twitch") { Task { await model.login() } }
+                    Button("Authorize chat & sign in") { Task { await model.login(chat: true) } }
+                    Button("Use device authorization") { Task { await model.auth.startDeviceLogin(clientID: model.deviceClientID, chat: true) } }
+                    if let code = model.auth.deviceCode { Text("Visit twitch.tv/activate and enter:"); Text(code.userCode).font(.title.monospaced().bold()); if let url = URL(string: code.verificationUri) { Link("Open Twitch activation", destination: url) } }
+                    Text(model.auth.status)
+                    if let session = model.auth.session { Text("Permissions: \(session.scopes.joined(separator: ", "))").font(.caption); Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.auth.logout(); await model.refresh() } } }
+                    if let error = model.auth.error { Notice(error) }
+                }
+                Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
+                Section("Playback") {
+                    Picker("Preferred quality", selection: $personal.data.preferences.preferredQuality) {
+                        Text("Auto").tag("auto")
+                        ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { Text($0).tag($0) }
+                    }
+                    Text("Additional qualities appear after your source resolves a stream.").font(.caption).foregroundStyle(.secondary)
+                    Toggle("Autoplay when opening a channel", isOn: $personal.data.preferences.autoplay)
+                    Toggle("Picture in Picture", isOn: $personal.data.preferences.pictureInPicture)
+                    Toggle("Retry playback after an interruption", isOn: $personal.data.preferences.retryPlayback)
+                }
+                Section("Chat") {
+                    Toggle("Show chat", isOn: $personal.data.preferences.showChat)
+                    #if os(tvOS)
+                    Picker("Chat font size", selection: $personal.data.preferences.chatFontSize) { ForEach([14.0, 18.0, 22.0, 26.0], id: \.self) { Text(String(Int($0))).tag($0) } }
+                    #else
+                    Stepper("Font size: \(Int(personal.data.preferences.chatFontSize))", value: $personal.data.preferences.chatFontSize, in: 12...28)
+                    #endif
+                    Toggle("Show timestamps", isOn: $personal.data.preferences.timestamps)
+                    Toggle("Show emotes", isOn: $personal.data.preferences.emotes)
+                    Toggle("Automatically scroll to latest", isOn: $personal.data.preferences.autoscroll)
+                }
+                Section("Downloads") { Text("Stored: \(ByteCountFormatter.string(fromByteCount: model.downloads.storageBytes, countStyle: .file))"); Text("Authorized media only. Transfers stay local. Apple TV does not store offline downloads.").font(.caption).foregroundStyle(.secondary) }
+                Section("Appearance") { Toggle("Dark theme", isOn: $personal.data.preferences.darkTheme); Toggle("Reduce animations", isOn: $personal.data.preferences.reduceMotion) }
+                Section("About") {
+                    Text("Twitchy 0.1.0 (1) · Rafael Reverberi")
+                    NavigationLink("Privacy") { LegalView(title: "Privacy", text: "Twitch authentication and metadata go directly to Twitch. Your configured streaming source receives playback and authorized download requests, plus its own credentials. Twitch credentials are never sent to it. Tokens are stored in device-only Keychain entries. Sources, preferences, recent searches, favorites, history and downloads remain local. No analytics or CloudKit synchronization is active. Chat history is held only in bounded memory.") }
+                    NavigationLink("License & acknowledgments") { LegalView(title: "License", text: "Original Twitchy code is licensed under the MIT License. Copyright © 2026 Rafael Reverberi. Permission is granted to use, copy, modify, merge, publish, distribute, sublicense and sell copies subject to preserving the copyright and license notice. Software is provided AS IS without warranty. Uses Apple system frameworks; no third-party runtime packages. Twitchy is not affiliated with or endorsed by Twitch.") }
+                    Link("Twitch Developer documentation", destination: URL(string: "https://dev.twitch.tv/docs/")!)
+                }
+            }
+            #if !os(tvOS)
+            .formStyle(.grouped)
+            #endif
+            .navigationTitle("Settings").toolbar { ToolbarItem { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(width: 720, height: 780)
+        #endif
+    }
+}
+struct LegalView: View { var title: String; var text: String; var body: some View { ScrollView { Text(text).padding(28).frame(maxWidth: 700, alignment: .leading) }.navigationTitle(title) } }
+struct SourcesView: View {
+    @Environment(AppModel.self) private var model
+    @State private var editing: StreamingSource?
+    @State private var adding = false
+    @State private var error: String?
+    var body: some View {
+        List {
+            Section { Text("Video playback uses the active source. Twitch sign-in and chat remain independent.").foregroundStyle(.secondary) }
+            if let error { Notice(error) }
+            if let error = model.sources.error { Notice(error) }
+            ForEach(model.sources.sources) { source in
+                Section {
+                    HStack { VStack(alignment: .leading) { Text(source.name).font(.headline); Text(source.baseURL.absoluteString).font(.caption).foregroundStyle(.secondary) }; Spacer(); if source.id == model.sources.activeID { Label("Active", systemImage: "checkmark.circle.fill").foregroundStyle(TwitchyTheme.live) } }
+                    Text(source.connectionStatus).font(.caption)
+                    if let version = source.serverVersion { Text("Server \(version) · API \(source.capabilities?.apiVersion ?? "unknown")") }
+                    if let caps = source.capabilities { Text("Protocols: \(caps.playbackProtocols.joined(separator: ", "))"); Text("Live: \(caps.live ? "Yes" : "No") · VOD: \(caps.vod ? "Yes" : "No") · Downloads: \(caps.downloads ? "Yes" : "No")"); if let ad = caps.adHandling { Text("Server filtering: \(ad)") } }
+                    if let date = source.lastSuccessfulCheck { Text("Last successful check: \(date.formatted())").font(.caption) }
+                    HStack { Button("Test") { Task { await model.sources.test(source.id) } }; Button("Edit") { editing = source }; Button("Select") { perform { try model.sources.select(source.id) } }.disabled(!source.enabled); Button(source.enabled ? "Disable" : "Enable") { var copy = source; copy.enabled.toggle(); perform { try model.sources.upsert(copy) } } }
+                    Button("Remove source", role: .destructive) { perform { try model.sources.remove(source.id) } }
+                }
+            }
+            Section { Button { adding = true } label: { Label("Add streaming source", systemImage: "plus") }.accessibilityIdentifier("sources.add") }
+        }
+        #if os(macOS)
+        .buttonStyle(.borderless)
+        #endif
+        .navigationTitle("Sources").sheet(isPresented: $adding) { SourceEditor(source: nil) }.sheet(item: $editing) { SourceEditor(source: $0) }
+    }
+    private func perform(_ action: () throws -> Void) { do { try action(); error = nil } catch { self.error = error.localizedDescription } }
+}
+struct SourceEditor: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let source: StreamingSource?
+    @State private var name = ""
+    @State private var url = ""
+    @State private var localHTTP = false
+    @State private var authenticate = false
+    @State private var token = ""
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Name", text: $name).accessibilityIdentifier("sources.name")
+                TextField("HTTPS base URL", text: $url).accessibilityIdentifier("sources.url")
+                Toggle("Allow local HTTP for development", isOn: $localHTTP)
+                Toggle("Source requires bearer authentication", isOn: $authenticate)
+                if authenticate { SecureField(source == nil ? "Source token" : "New token (blank keeps existing)", text: $token) }
+                Text("Use a source token issued by your server. Never enter a Twitch token. Local HTTP is restricted to loopback and private network addresses.").font(.caption).foregroundStyle(.secondary)
+                if let error { Notice(error) }
+                Button("Save source") {
+                    do {
+                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { throw ClientError.message("Give your source a name.") }
+                        let validated = try SourceURL.validate(url, allowLocalHTTP: localHTTP)
+                        var value = source ?? StreamingSource(name: name, baseURL: validated)
+                        value.name = name; value.baseURL = validated; value.allowLocalHTTP = localHTTP; value.usesAuthentication = authenticate
+                        if value.baseURL != source?.baseURL { value.capabilities = nil; value.serverVersion = nil; value.lastSuccessfulCheck = nil; value.connectionStatus = "Not tested" }
+                        let credential: String? = !authenticate ? "" : (!token.isEmpty ? token : nil)
+                        try model.sources.upsert(value, credential: credential); dismiss()
+                    } catch { self.error = error.localizedDescription }
+                }.disabled(name.isEmpty || url.isEmpty).accessibilityIdentifier("sources.save")
+            }
+            #if !os(tvOS)
+            .formStyle(.grouped)
+            #endif
+            .navigationTitle(source == nil ? "Add source" : "Edit source").toolbar { ToolbarItem { Button("Cancel") { dismiss() } } }
+        }.onAppear { if let source { name = source.name; url = source.baseURL.absoluteString; localHTTP = source.allowLocalHTTP; authenticate = source.usesAuthentication } }
+        #if os(macOS)
+        .frame(width: 600, height: 440)
+        #endif
+    }
+}
+
+#Preview { SettingsView().environment(AppModel()) }
