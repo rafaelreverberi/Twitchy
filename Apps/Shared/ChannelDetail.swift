@@ -96,7 +96,7 @@ struct ChannelDetail: View {
             if model.playback.state == .loading || model.playback.state == .buffering { ProgressView().padding().background(.black.opacity(0.7), in: Capsule()) }
             if model.playback.state == .adBreak || model.playback.state == .pausedByServer { Text("Playback paused by your source").padding().background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 10)) }
             if let error = model.playback.error { VStack { Notice(error); Button("Retry playback") { attempt = 0; Task { await model.playback.retry() } } }.padding(20) }
-        }.aspectRatio(16 / 9, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12))
+        }.foregroundStyle(.white).aspectRatio(16 / 9, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 #if os(macOS)

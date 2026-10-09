@@ -1,0 +1,11 @@
+# Direct Twitch chat
+
+Twitchy opens wss://eventsub.wss.twitch.tv/ws and subscribes to channel.chat.message v1 using POST https://api.twitch.tv/helix/eventsub/subscriptions after session_welcome. The condition contains broadcaster_user_id and the token user's user_id; transport is websocket/session_id. A user token needs user:read:chat. Sending uses POST /helix/chat/messages with broadcaster_id, sender_id and message, requiring user:write:chat. Twitch decides restrictions and reports dropped messages; Twitchy displays failures. One send per 1.2 seconds is an additional conservative local throttle, not a replacement for Twitch's limits.
+
+Messages decode structured Unicode text, emote fragments, colors and badge references. Global and channel badge URLs are retrieved directly from Helix. Only 300 messages and 600 deduplication IDs remain in memory. No disk archive exists. Fragment rendering supports static Twitch emotes; cheermotes, animated variants and advanced inline wrapping are future work.
+
+Keepalives and notifications refresh a watchdog. Idle sockets are cancelled and reconnect with capped exponential backoff. A session_reconnect URL is accepted only on Twitch's wss host and existing subscriptions transfer on the new welcome while the old socket keeps draining messages until takeover. Fatal revocation/missing permission stops retry and requests account authorization. Closing the channel or backgrounding disconnects. Recent messages remain scrollable; dragging disables autoscroll until Jump to latest. Reduced motion suppresses scroll animation. macOS/iPad wider layouts show a chat panel beside media; compact layouts put chat below. Native TextField supports platform input including tvOS.
+
+Current unit tests cover envelopes, Unicode, safe migration URLs and backoff. A real account/channel is needed to verify the entire WebSocket/revocation/send lifecycle. Moderation deletion/clear subscriptions, badges beyond received references and separate macOS chat windows remain roadmap work.
+
+Official references: https://dev.twitch.tv/docs/chat/ , https://dev.twitch.tv/docs/eventsub/handling-websocket-events/ , https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelchatmessage , https://dev.twitch.tv/docs/api/reference/#send-chat-message . Checked 2026-10-09.

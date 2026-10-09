@@ -1,0 +1,43 @@
+name: Apple builds and service tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  services:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - run: ./scripts/test.sh
+  applications:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: Twitchy-macOS
+            destination: platform=macOS
+          - scheme: Twitchy-iOS
+            destination: generic/platform=iOS Simulator
+          - scheme: Twitchy-tvOS
+            destination: generic/platform=tvOS Simulator
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version
+      - run: xcodebuild -project Twitchy.xcodeproj -scheme '${{ matrix.scheme }}' -destination '${{ matrix.destination }}' CODE_SIGNING_ALLOWED=NO build
+
+  ios-ui:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test native iPhone navigation
+        shell: bash
+        run: |
+          device_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((x["udid"] for runtime,items in d["devices"].items() if "iOS" in runtime for x in items if x.get("isAvailable") and "iPhone" in x["name"]), ""))')"
+          if [ -z "$device_id" ]; then
+            echo '::warning::No available iPhone simulator runtime; UI test skipped.'
+            exit 0
+          fi
+          xcodebuild -project Twitchy.xcodeproj -scheme Twitchy-iOS -destination "platform=iOS Simulator,id=$device_id" CODE_SIGNING_ALLOWED=NO test

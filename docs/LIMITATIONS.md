@@ -1,0 +1,16 @@
+# Known limitations and distribution boundaries
+
+0.1.0 is a functional development client, not a finished App Store release. The feature matrix in README distinguishes implemented code from pending work.
+
+Real Twitch OAuth, consent/callback registration, actual Helix account data, live EventSub receive/send/migration/revocation, and public Device Flow refresh have not been account-tested without a developer registration. Source integration is verified against the localhost fixture; no external Go backend exists here. The browser flow needs an owned HTTPS callback page (provided as a static bridge) registered with Twitch. Host it without analytics/content injection and test its return to the app. Public Device Flow requires no callback host.
+
+All official Helix discovery endpoints need a token. Logged-out users can navigate/setup but cannot load live metadata. Personalized recommendations, global VOD/clip text search, public follow mutation and suggestion endpoints are not invented. Following opens the official Twitch channel page. Subscription information requires an extra permission and currently has no UI.
+
+Downloads require independently checked rights. They run in the foreground, do not support pause/range resume/background sessions and restart failed transfers; no configurable storage directory/concurrency UI yet. Apple TV does not persist offline media. CloudKit, configurable accent, animated/third-party emotes, advanced chat wrapping/moderation events, separate chat window and resizable dividers remain planned.
+
+Server states are initially supplied with session creation; no ongoing source status feed exists in v1. Playback recovery is bounded retry, and server session cleanup uses best effort with explicit error plus backend TTL expectations. PiP/background behavior, accessibility contrast, low-memory and remote focus need physical-device evaluation. tvOS SDK builds do not establish Apple TV runtime behavior. Signed/notarized packages and App Store distribution are not produced.
+
+## Twitch restrictions
+Official documentation: https://dev.twitch.tv/docs/ , https://dev.twitch.tv/docs/embed/video-and-clips/ , https://legal.twitch.com/en/legal/developer-agreement/ . Reviewed 2026-10-09.
+
+The public Helix API provides metadata, not a general arbitrary native-stream extraction endpoint. Twitch's supported embedded player has its own player, domain and advertising requirements; Twitchy does not use it or claim its approval. A custom AVPlayer/source architecture is technically implemented but **does not establish permission to redistribute Twitch video, suppress advertisements, bypass access controls, or publish this client**. Backend operators and distributors must obtain/review applicable permissions and current terms. No ad filtering, DRM circumvention or ad-free guarantee exists in the Apple client. A server may truthfully report a pause/filtering status; missing original content is never reconstructed or faked. MIT covers original software only.

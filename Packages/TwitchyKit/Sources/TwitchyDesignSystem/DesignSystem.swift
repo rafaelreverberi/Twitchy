@@ -1,16 +1,34 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 public enum TwitchyTheme {
-    public static let background = Color(hex: 0x0E0E10)
-    public static let secondary = Color(hex: 0x18181B)
-    public static let elevated = Color(hex: 0x1F1F23)
+    public static let background = Color(adaptiveDark: 0x0E0E10, light: 0xF5F5F7)
+    public static let secondary = Color(adaptiveDark: 0x18181B, light: 0xFFFFFF)
+    public static let elevated = Color(adaptiveDark: 0x1F1F23, light: 0xEAEAF0)
     public static let accent = Color(hex: 0x9146FF)
     public static let highlight = Color(hex: 0xA970FF)
-    public static let muted = Color(hex: 0xADADB8)
+    public static let muted = Color(adaptiveDark: 0xADADB8, light: 0x5C5C67)
     public static let live = Color(hex: 0x00C896)
     public static let error = Color(hex: 0xEB0400)
     public static let spacing: CGFloat = 20
 }
 extension Color {
+    public init(adaptiveDark dark: UInt32, light: UInt32) {
+        #if os(macOS)
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, alpha: 1)
+        })
+        #else
+        self.init(uiColor: UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, alpha: 1)
+        })
+        #endif
+    }
     public init(hex: UInt32) { self.init(.sRGB, red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, opacity: 1) }
 }
 public struct BrandMark: View {

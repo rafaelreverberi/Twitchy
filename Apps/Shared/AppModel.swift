@@ -42,7 +42,7 @@ import TwitchyChat
     private var refreshID = UUID()
     func refresh() async {
         let current = UUID(); refreshID = current
-        guard let api, let session = auth.session else { streams = []; followedStreams = []; channels = []; categories = []; user = nil; avatars = [:]; loading = false; return }
+        guard let api, let session = auth.session else { cachedAPI = nil; cachedToken = nil; streams = []; followedStreams = []; channels = []; categories = []; user = nil; avatars = [:]; loading = false; return }
         loading = true; error = nil; defer { if refreshID == current { loading = false } }
         do {
             async let profile = api.currentUser()

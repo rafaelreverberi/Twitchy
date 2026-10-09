@@ -1,0 +1,18 @@
+name: Bug report
+description: Report a reproducible issue without sharing credentials.
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and expected behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Twitchy version, platform, OS and source API version
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Never include tokens, private source URLs, or private account data.

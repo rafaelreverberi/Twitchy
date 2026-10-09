@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3VKCwxNJyumgsRW8gXeKS3NYGqSmVXkUWSNqAHERRo0='; style-src 'sha256-RxUYx9ty/9WOcRkcAY6FDs9aAL7GUWuxTaB/EANmjbQ='; base-uri 'none'; form-action 'none'"><title>Return to Twitchy</title>
+<style>body{background:#0e0e10;color:white;font:18px system-ui;margin:10vh auto;max-width:32em;padding:2em}a{color:#a970ff}</style>
+<h1>Return to Twitchy</h1><p id="status">Checking the sign-in response…</p><a id="return" hidden>Open Twitchy</a>
+<script>
+'use strict';
+// Host on an HTTPS domain you own. No external scripts, network calls or token storage.
+const parameters = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+if (parameters.has('state') && (parameters.has('access_token') || parameters.has('error'))) {
+  const callback = 'twitchy://oauth#' + parameters.toString();
+  history.replaceState(null, '', location.pathname);
+  const link = document.getElementById('return'); link.href = callback; link.hidden = false;
+  document.getElementById('status').textContent = 'Continue in the Twitchy app.';
+  location.replace(callback);
+} else { document.getElementById('status').textContent = 'No valid sign-in response. Start sign-in from Twitchy.'; }
+</script></html>

@@ -1,0 +1,1221 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Twitchy Streaming Source API",
+    "version": "1.0.0",
+    "description": "Proposed independent backend contract. NOT a Twitch API or implemented production backend. Source authentication is independent from Twitch."
+  },
+  "servers": [
+    {
+      "url": "https://source.example.com"
+    }
+  ],
+  "security": [
+    {
+      "SourceBearer": []
+    }
+  ],
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Health information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "SourceBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "responses": {
+          "200": {
+            "description": "Negotiated v1 capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "SourceBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/playback/sessions": {
+      "post": {
+        "operationId": "createPlaybackSession",
+        "responses": {
+          "201": {
+            "description": "A created, source-owned playback session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/playback/sessions/{sessionId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "sessionId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,199}$"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "deletePlaybackSession",
+        "responses": {
+          "204": {
+            "description": "Session stopped; idempotent including already stopped sessions"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/downloads": {
+      "post": {
+        "operationId": "createAuthorizedDownload",
+        "responses": {
+          "202": {
+            "description": "Authorized job accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/downloads/{downloadId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "downloadId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,199}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDownload",
+        "responses": {
+          "200": {
+            "description": "Job state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelDownload",
+        "responses": {
+          "204": {
+            "description": "Job cancelled/deleted; idempotent"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/downloads/{downloadId}/file": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "downloadId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,199}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDownloadFile",
+        "responses": {
+          "200": {
+            "description": "MP4 (H.264/AAC) authorized file. Content-Length and Content-Disposition required. No redirects; 409 until ready. Streaming response, never JSON.",
+            "headers": {
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Source authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient source rights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content or resource unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid resource state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Source failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "SourceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Source-issued credential ONLY; never Twitch credentials"
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "server_version": {
+            "type": "string"
+          },
+          "api_version": {
+            "type": "string",
+            "enum": [
+              "v1"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "server_version",
+          "api_version"
+        ],
+        "additionalProperties": true
+      },
+      "Capabilities": {
+        "type": "object",
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "enum": [
+              "v1"
+            ]
+          },
+          "playback_protocols": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "hls"
+              ]
+            }
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "vod": {
+            "type": "boolean"
+          },
+          "clips": {
+            "type": "boolean"
+          },
+          "quality_selection": {
+            "type": "boolean"
+          },
+          "downloads": {
+            "type": "boolean"
+          },
+          "authorized_downloads_only": {
+            "type": "boolean"
+          },
+          "ad_handling": {
+            "type": "string",
+            "description": "Informational, no guarantee; e.g. none, detection, pause. No client filtering."
+          }
+        },
+        "required": [
+          "api_version",
+          "playback_protocols",
+          "live",
+          "vod",
+          "clips",
+          "quality_selection",
+          "downloads",
+          "authorized_downloads_only"
+        ],
+        "additionalProperties": true
+      },
+      "PlaybackRequest": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "live",
+              "vod",
+              "clip"
+            ]
+          },
+          "channel_login": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_]{1,25}$"
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "requested_quality": {
+            "type": "string",
+            "default": "auto"
+          },
+          "preferences": {
+            "type": "object",
+            "properties": {
+              "low_latency": {
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "content_type",
+          "requested_quality"
+        ],
+        "additionalProperties": true,
+        "oneOf": [
+          {
+            "properties": {
+              "content_type": {
+                "const": "live"
+              }
+            },
+            "required": [
+              "channel_login"
+            ]
+          },
+          {
+            "properties": {
+              "content_type": {
+                "enum": [
+                  "vod",
+                  "clip"
+                ]
+              }
+            },
+            "required": [
+              "content_id"
+            ]
+          }
+        ]
+      },
+      "PlaybackSession": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,199}$"
+          },
+          "hls_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "HTTPS AVPlayer-compatible HLS URL; short-lived bearer signature permitted. No long-lived source or Twitch tokens. Local HTTP only explicitly enabled by client."
+          },
+          "qualities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "player_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pause",
+                "seek",
+                "pip"
+              ]
+            }
+          },
+          "filtering_status": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "playing",
+              "buffering",
+              "reconnecting",
+              "unavailable",
+              "paused_by_server",
+              "ad_break",
+              "unsupported",
+              "server_error"
+            ]
+          }
+        },
+        "required": [
+          "session_id",
+          "hls_url",
+          "qualities"
+        ],
+        "additionalProperties": true
+      },
+      "DownloadRequest": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "vod",
+              "clip"
+            ]
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "authorization_reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Opaque server-issued reference proving permission. NOT a Twitch OAuth token. Server MUST check ownership, rights, scope, expiry, and principal; a client assertion is insufficient."
+          }
+        },
+        "required": [
+          "content_type",
+          "content_id",
+          "authorization_reference"
+        ],
+        "additionalProperties": true
+      },
+      "DownloadJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,199}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "preparing",
+              "ready",
+              "transferring",
+              "paused",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "transferred_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "error": {
+            "$ref": "#/components/schemas/ProblemDetail"
+          },
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional informational URL. Client uses authenticated /file endpoint."
+          },
+          "filename": {
+            "type": "string"
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cancel",
+                "retry"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "progress",
+          "transferred_bytes"
+        ],
+        "additionalProperties": true
+      },
+      "ProblemDetail": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "additionalProperties": true
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": true
+      }
+    }
+  }
+}

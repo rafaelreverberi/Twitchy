@@ -58,7 +58,7 @@ public struct OAuthAttempt: Sendable {
     public func restore() async {
         let current = generation
         do {
-            if let bytes = try secrets.read("session") { session = try JSONDecoder().decode(AuthSession.self, from: bytes); try await validate(); startValidation() }
+            if let bytes = try secrets.read("session") { session = try JSONDecoder().decode(AuthSession.self, from: bytes); try await validate() }
         } catch { if generation == current { self.error = error.localizedDescription; status = "Sign-in needs attention" } }
     }
     public func validate() async throws {
@@ -70,7 +70,7 @@ public struct OAuthAttempt: Sendable {
             guard v.clientId == stored.clientID, v.userId == stored.userID, v.expiresIn > 0 else { throw ClientError.unauthorized }
             guard generation == current, session?.accessToken == stored.accessToken else { throw CancellationError() }
             var updated = stored; updated.expiresAt = Date().addingTimeInterval(Double(v.expiresIn)); updated.scopes = v.scopes
-            try save(updated); status = "Connected"
+            try save(updated); status = "Connected"; if validationTask == nil { startValidation() }
         } catch ClientError.unauthorized {
             guard generation == current, session?.accessToken == stored.accessToken else { throw CancellationError() }
             if stored.refreshToken != nil { try await refresh(stored) } else { try secrets.delete("session"); session = nil; status = "Sign in again"; throw ClientError.unauthorized }
@@ -109,7 +109,7 @@ public struct OAuthAttempt: Sendable {
     public func login(configuration: OAuthConfiguration, chat: Bool = false) async {
         #if !os(tvOS)
         let current = UUID(); generation = current
-        browser?.cancel()
+        browser?.cancel(); deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
         do {
             let attempt = try OAuthAttempt(configuration: configuration, scopes: ["user:read:follows"] + (chat ? ["user:read:chat", "user:write:chat"] : []))
             status = "Signing in"
@@ -138,6 +138,9 @@ public struct OAuthAttempt: Sendable {
     public func startDeviceLogin(clientID: String, chat: Bool = false) async {
         guard !clientID.isEmpty else { error = "Set a public Device Flow Client ID in Settings."; return }
         deviceTask?.cancel()
+        #if !os(tvOS)
+        browser?.cancel()
+        #endif
         let current = UUID(); generation = current
         do {
             let scopes = (["user:read:follows"] + (chat ? ["user:read:chat", "user:write:chat"] : [])).joined(separator: " ")
@@ -168,7 +171,7 @@ public struct OAuthAttempt: Sendable {
     }
     public func logout() async {
         generation = UUID()
-        validationTask?.cancel(); deviceTask?.cancel(); deviceCode = nil
+        validationTask?.cancel(); validationTask = nil; deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
         #if !os(tvOS)
         browser?.cancel()
         #endif
