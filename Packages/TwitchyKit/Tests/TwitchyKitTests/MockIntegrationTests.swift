@@ -1,0 +1,70 @@
+import Foundation
+import Testing
+import AVFoundation
+import TwitchyCore
+import TwitchySources
+@testable import TwitchyPlayback
+private var mockURL: URL? { ProcessInfo.processInfo.environment["TWITCHY_MOCK_URL"].flatMap(URL.init(string:)) }
+private func fixtureClient() throws -> StreamingSourceClient {
+    try StreamingSourceClient(source: .init(name: "Explicit test fixture", baseURL: #require(mockURL), allowLocalHTTP: true))
+}
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server"))
+func mockDiscoverySessionAndCleanup() async throws {
+    let client = try fixtureClient()
+    #expect(try await client.health().serverVersion == "mock-1.0.0")
+    #expect(try await client.capabilities().qualitySelection)
+    let session = try await client.createSession(.init(channelLogin: "fixture"))
+    #expect(session.qualities == ["auto", "360p"])
+    try await client.endSession(session.sessionId)
+}
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server"))
+func mockDownloadRightsAndFile() async throws {
+    let client = try fixtureClient()
+    await #expect(throws: SourceAPIError.self) { try await client.createDownload(contentType: "vod", contentID: "fixture", authorizationReference: "invalid") }
+    let job = try await client.createDownload(contentType: "vod", contentID: "fixture", authorizationReference: "fixture-owner")
+    #expect(job.status == .ready)
+    let file = try await HTTPClient().response(client.downloadFileRequest(job.id))
+    #expect(file.data.count > 10_000); #expect(String(decoding: file.data[4..<8], as: UTF8.self) == "ftyp")
+    try await client.cancelDownload(job.id)
+}
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server")) @MainActor
+func mockNativeHLSPlaybackAndStop() async throws {
+    let controller = PlaybackController()
+    await controller.start(client: try fixtureClient(), request: .init(channelLogin: "fixture"))
+    for _ in 0..<40 {
+        if controller.player.currentItem?.status == .readyToPlay { break }
+        try await Task.sleep(for: .milliseconds(250))
+    }
+    #expect(controller.player.currentItem?.status == .readyToPlay)
+    #expect(controller.session?.sessionId == "fixture-session")
+    await controller.stop(); #expect(controller.player.currentItem == nil)
+}
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server")) @MainActor
+func mockDownloadTransferPersistenceAndDelete() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = DownloadManager(directory: directory)
+    await manager.enqueue(client: try fixtureClient(), type: "vod", contentID: "fixture", permission: "fixture-owner")
+    for _ in 0..<40 { if manager.items.first?.job.status == .completed { break }; try await Task.sleep(for: .milliseconds(100)) }
+    let item = try #require(manager.items.first)
+    #expect(item.job.status == .completed)
+    #expect(FileManager.default.fileExists(atPath: try #require(manager.file(for: item)).path))
+    let restored = DownloadManager(directory: directory); #expect(restored.items.first?.job.status == .completed)
+    try restored.delete(item.id); #expect(restored.items.isEmpty)
+}
+
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server")) @MainActor
+func mockRetryFailedLocalTransfer() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let client = try fixtureClient()
+    var item = LocalDownload(sourceID: client.source.id, job: try await client.createDownload(contentType: "vod", contentID: "fixture", authorizationReference: "fixture-owner"), contentType: "vod", contentID: "fixture", authorizationReference: "fixture-owner")
+    item.job.status = .failed
+    try JSONEncoder().encode([item]).write(to: directory.appendingPathComponent("index.json"))
+    let manager = DownloadManager(directory: directory)
+    manager.resume(item.id, client: client)
+    for _ in 0..<40 { if manager.items.first?.job.status == .completed { break }; try await Task.sleep(for: .milliseconds(100)) }
+    #expect(manager.items.first?.job.status == .completed)
+    #expect(manager.storageBytes > 10_000)
+}

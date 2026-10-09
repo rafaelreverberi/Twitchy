@@ -1,0 +1,87 @@
+import Foundation
+import AVFoundation
+import Observation
+import TwitchyCore
+import TwitchySources
+#if os(iOS) || os(tvOS)
+import UIKit
+#endif
+
+public enum PlayerState: String, Sendable { case idle, loading, playing, buffering, reconnecting, unavailable, pausedByServer, adBreak, unsupported, failed }
+@MainActor @Observable public final class PlaybackController {
+    public let player = AVPlayer()
+    public private(set) var state: PlayerState = .idle
+    public private(set) var session: PlaybackSession?
+    public private(set) var error: String?
+    public private(set) var quality = "auto"
+    public var pictureInPictureActive = false
+    private var client: StreamingSourceClient?
+    private var request: PlaybackRequest?
+    public var currentRequest: PlaybackRequest? { request }
+    private var observation: NSKeyValueObservation?
+    private var itemObservation: NSKeyValueObservation?
+    private var generation = UUID()
+    public init() {
+        observation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            let value = player.timeControlStatus
+            Task { @MainActor [weak self] in
+                guard let self, session != nil else { return }
+                if value == .playing {
+                    state = .playing
+                    #if os(iOS)
+                    UIApplication.shared.isIdleTimerDisabled = true
+                    #endif
+                }
+                else if value == .waitingToPlayAtSpecifiedRate { state = .buffering }
+            }
+        }
+    }
+    public func start(client: StreamingSourceClient, request: PlaybackRequest) async {
+        await stop(); let current = UUID(); generation = current
+        self.client = client; self.request = request; state = .loading; error = nil
+        do {
+            let session = try await client.createSession(request)
+            guard generation == current, !Task.isCancelled else { try await client.endSession(session.sessionId); return }
+            self.session = session; quality = request.requestedQuality
+            switch session.state {
+            case "paused_by_server": state = .pausedByServer
+            case "ad_break": state = .adBreak
+            case "unavailable": state = .unavailable
+            case "unsupported": state = .unsupported; error = "The source cannot play this content."
+            case "server_error": state = .failed; error = "The source reported a playback error."
+            default: state = .buffering
+            }
+            let item = AVPlayerItem(url: session.hlsUrl)
+            itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                let failed = item.status == .failed
+                Task { @MainActor [weak self] in if failed { self?.state = .failed; self?.error = "Video playback failed. Retry or check your streaming source." } }
+            }
+            player.replaceCurrentItem(with: item)
+            #if os(iOS) || os(tvOS)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+            #endif
+            if [.buffering, .playing].contains(state) { player.play() }
+        } catch is CancellationError { if generation == current { state = .idle } }
+        catch { if generation == current { self.error = error.localizedDescription; state = .failed } }
+    }
+    public func changeQuality(_ value: String) async {
+        guard let session, value == "auto" || session.qualities.contains(value), let client, var request else { return }
+        let seconds = player.currentTime().seconds
+        request.requestedQuality = value; await start(client: client, request: request)
+        if request.contentType != "live", seconds.isFinite, seconds > 0 { await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) }
+    }
+    public func retry() async { guard let client, let request else { return }; await start(client: client, request: request) }
+    public func stop() async {
+        generation = UUID(); pictureInPictureActive = false
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
+        itemObservation = nil; player.pause(); player.replaceCurrentItem(with: nil)
+        let old = session; let oldClient = client; session = nil; state = .idle; client = nil; request = nil
+        #if os(iOS) || os(tvOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
+        if let old, let oldClient { do { try await oldClient.endSession(old.sessionId) } catch { self.error = "Playback stopped. The source session will expire; cleanup could not reach the source." } }
+    }
+}
