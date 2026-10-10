@@ -28,7 +28,7 @@ struct DownloadsView: View {
                 Section {
                     Text(item.job.filename ?? item.contentID).font(.headline)
                     Text(item.job.status.rawValue.capitalized).foregroundStyle(.secondary)
-                    if item.job.totalBytes != nil || item.job.status == .completed { ProgressView(value: item.job.progress) } else if item.job.status == .transferring { ProgressView() }
+                    if item.job.status == .completed || (item.job.status == .transferring && item.job.totalBytes != nil) { ProgressView(value: item.job.progress) } else if item.job.status == .transferring { ProgressView() }
                     Text((item.job.totalBytes != nil ? "\(Int(item.job.progress * 100))% · " : "") + ByteCountFormatter.string(fromByteCount: item.job.transferredBytes, countStyle: .file)).font(.caption)
                     if let speed = item.bytesPerSecond, item.job.status == .transferring { Text("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s").font(.caption) }
                     HStack {
@@ -36,7 +36,7 @@ struct DownloadsView: View {
                         if item.job.status == .failed || item.job.status == .ready || item.job.status == .queued || item.job.status == .preparing { Button("Retry / resume") { do { model.downloads.resume(item.id, client: try originalClient(item.sourceID)) } catch { self.error = error.localizedDescription } } }
                         if item.job.status != .completed && item.job.status != .cancelled { Button("Cancel") { Task { await model.downloads.cancel(item.id, client: try? originalClient(item.sourceID)) } } }
                         Button("Delete", role: .destructive) { do { try model.downloads.delete(item.id) } catch { self.error = error.localizedDescription } }
-                    }
+                    }.buttonStyle(.borderless).accessibilityElement(children: .contain)
                 }
             }
             #endif
