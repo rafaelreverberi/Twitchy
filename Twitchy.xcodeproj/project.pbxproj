@@ -36,6 +36,7 @@
 		8CFC0C146828F8FAD08A4639 /* ChannelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */; };
 		8D85DC7777BE1524D2E1CFF1 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6978C3F152935299090A10AD /* NavigationTests.swift */; };
 		967EBD9B90E339ABDABD454C /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8229107D231D14F33914AC7 /* SearchView.swift */; };
+		9B2A81056F5B802A4DE4C7E2 /* MacHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */; };
 		9CBACFABBCC243A3DD1C7330 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8229107D231D14F33914AC7 /* SearchView.swift */; };
 		9E62EB7F88ABAED46F88DC2C /* TwitchyPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 20DC2AE654509599336A6F58 /* TwitchyPlayback */; };
 		A4C8018745B75C030F569B3C /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA77D9986AA566819FFFBB0E /* TwitchyCore */; };
@@ -47,8 +48,10 @@
 		CCDAF2913FA4FA14915C2272 /* TwitchyAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 87D95B0BE5A4EB195443BCAB /* TwitchyAuth */; };
 		CDFD368993B9E1556703A534 /* TwitchyChat in Frameworks */ = {isa = PBXBuildFile; productRef = 67095C661AC352BB7A643113 /* TwitchyChat */; };
 		D024EC6FBE23090EA668639B /* ChannelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */; };
+		D2B59A45375CC8AA8E9BBFF1 /* MacHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */; };
 		D5CA35EC63395A312D89BF9F /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B77DDFAC1E7C30F0B03063 /* DownloadsView.swift */; };
 		D764743C3680C4F4F7ED56E3 /* TwitchyPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 7A787602F28EA269AA3DD28F /* TwitchyPlayback */; };
+		D9A0E731589465F6E8E5B52A /* MacHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */; };
 		DFDE1A7B3199E92797609845 /* TwitchyAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 9D282ED85A87AA1D4AEA7DCC /* TwitchyAPI */; };
 		EA0856F1995271A25BA60DD1 /* TwitchySources in Frameworks */ = {isa = PBXBuildFile; productRef = 6967F0C890CB15CEC90752FC /* TwitchySources */; };
 		EB2C5ECE9F5CFEC1DFC0A74C /* TwitchyDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = EF8A09CD240709AF17F92E4A /* TwitchyDesignSystem */; };
@@ -74,14 +77,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		12074C2713422A898D0BD72A /* Twitchy-tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; name = "Twitchy-tvOS.app"; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		12074C2713422A898D0BD72A /* Twitchy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1839676C8A0857CD13F2A7F1 /* Twitchy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B2403F4331BA7811C0549E0 /* Twitchy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Twitchy.entitlements; sourceTree = "<group>"; };
 		68DC7D882795E6A8887C791D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		6978C3F152935299090A10AD /* NavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTests.swift; sourceTree = "<group>"; };
 		74DD16EA9626462FA12495E4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		75F0408F82B19297E28D63C1 /* Twitchy-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Twitchy-macOS.app"; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		75F0408F82B19297E28D63C1 /* Twitchy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		86FD1D750977F41414B974C2 /* TwitchyiOSUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TwitchyiOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelDetail.swift; sourceTree = "<group>"; };
+		9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHomeView.swift; sourceTree = "<group>"; };
 		A0DAF78D8BADD52AC5289C5D /* TwitchyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TwitchyKit; path = Packages/TwitchyKit; sourceTree = SOURCE_ROOT; };
 		A8229107D231D14F33914AC7 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwitchyApp.swift; sourceTree = "<group>"; };
@@ -152,8 +157,8 @@
 			isa = PBXGroup;
 			children = (
 				1839676C8A0857CD13F2A7F1 /* Twitchy.app */,
-				75F0408F82B19297E28D63C1 /* Twitchy-macOS.app */,
-				12074C2713422A898D0BD72A /* Twitchy-tvOS.app */,
+				75F0408F82B19297E28D63C1 /* Twitchy.app */,
+				12074C2713422A898D0BD72A /* Twitchy.app */,
 				86FD1D750977F41414B974C2 /* TwitchyiOSUITests.xctest */,
 				E6CC2C613597595A73B530E3 /* TwitchyUITests.xctest */,
 			);
@@ -183,9 +188,11 @@
 				EA280CB5BCFA86DA6ABB997D /* AppModel.swift */,
 				9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */,
 				D2B77DDFAC1E7C30F0B03063 /* DownloadsView.swift */,
+				9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */,
 				68DC7D882795E6A8887C791D /* RootView.swift */,
 				A8229107D231D14F33914AC7 /* SearchView.swift */,
 				F34ECC617628886598EF76F0 /* SettingsView.swift */,
+				4B2403F4331BA7811C0549E0 /* Twitchy.entitlements */,
 				ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */,
 			);
 			name = Shared;
@@ -226,7 +233,7 @@
 				F37923F4121FFE759FD9ED96 /* TwitchyDesignSystem */,
 			);
 			productName = "Twitchy-macOS";
-			productReference = 75F0408F82B19297E28D63C1 /* Twitchy-macOS.app */;
+			productReference = 75F0408F82B19297E28D63C1 /* Twitchy.app */;
 			productType = "com.apple.product-type.application";
 		};
 		46D56289ABE98E85D1956BB1 /* Twitchy-iOS */ = {
@@ -296,7 +303,7 @@
 				EF8A09CD240709AF17F92E4A /* TwitchyDesignSystem */,
 			);
 			productName = "Twitchy-tvOS";
-			productReference = 12074C2713422A898D0BD72A /* Twitchy-tvOS.app */;
+			productReference = 12074C2713422A898D0BD72A /* Twitchy.app */;
 			productType = "com.apple.product-type.application";
 		};
 		DC8A97DBC72F83A308030086 /* TwitchyUITests */ = {
@@ -333,6 +340,7 @@
 						ProvisioningStyle = Automatic;
 					};
 					81D8602A59DDBAA5F2CDCE55 = {
+						DevelopmentTeam = CNBB6EET8T;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 46D56289ABE98E85D1956BB1;
 					};
@@ -340,6 +348,7 @@
 						ProvisioningStyle = Automatic;
 					};
 					DC8A97DBC72F83A308030086 = {
+						DevelopmentTeam = CNBB6EET8T;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 21E1F17B763B244487127E77;
 					};
@@ -406,6 +415,7 @@
 				B9588E04E6E0654619E02A09 /* AppModel.swift in Sources */,
 				D024EC6FBE23090EA668639B /* ChannelDetail.swift in Sources */,
 				D5CA35EC63395A312D89BF9F /* DownloadsView.swift in Sources */,
+				9B2A81056F5B802A4DE4C7E2 /* MacHomeView.swift in Sources */,
 				4D853531A70AFE1876A8FADE /* RootView.swift in Sources */,
 				9CBACFABBCC243A3DD1C7330 /* SearchView.swift in Sources */,
 				F59CAA3FD062F000D08CBF90 /* SettingsView.swift in Sources */,
@@ -420,6 +430,7 @@
 				18CF1B1A2F1CFEF4B9595E70 /* AppModel.swift in Sources */,
 				7179D914E14B1FAAC2812524 /* ChannelDetail.swift in Sources */,
 				2D6F5D4643E1F4B092EE9B2D /* DownloadsView.swift in Sources */,
+				D9A0E731589465F6E8E5B52A /* MacHomeView.swift in Sources */,
 				C6153C4B7DC1EB827A31CBA5 /* RootView.swift in Sources */,
 				B2E314079A98483C948B333A /* SearchView.swift in Sources */,
 				1746FCA05D1DA2FC1EA3C4CF /* SettingsView.swift in Sources */,
@@ -442,6 +453,7 @@
 				8C28C55E0D3FB1806B5BFFF2 /* AppModel.swift in Sources */,
 				8CFC0C146828F8FAD08A4639 /* ChannelDetail.swift in Sources */,
 				3657F7765043B5F6F9532D40 /* DownloadsView.swift in Sources */,
+				D2B59A45375CC8AA8E9BBFF1 /* MacHomeView.swift in Sources */,
 				17FE484EBB71C8615A2424ED /* RootView.swift in Sources */,
 				967EBD9B90E339ABDABD454C /* SearchView.swift in Sources */,
 				067DE5021F7E5EAADD22953D /* SettingsView.swift in Sources */,
@@ -482,7 +494,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rafaelreverberi.TwitchyiOSUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ch.hivenet.TwitchyiOSUITests;
 				PRODUCT_NAME = TwitchyiOSUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -495,12 +507,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/tvOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-tvOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-tvos";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
@@ -540,10 +557,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/Shared/Twitchy.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -581,12 +600,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/tvOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-tvOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-tvos";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
@@ -597,13 +621,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = W3227YDK2V;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-ios";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -619,7 +647,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rafaelreverberi.TwitchyUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ch.hivenet.TwitchyUITests;
 				PRODUCT_NAME = TwitchyUITests;
 				SDKROOT = macosx;
 				TEST_TARGET_NAME = "Twitchy-macOS";
@@ -660,10 +688,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/Shared/Twitchy.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -708,12 +738,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/macOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-macOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-macos";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -728,7 +763,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rafaelreverberi.TwitchyUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ch.hivenet.TwitchyUITests;
 				PRODUCT_NAME = TwitchyUITests;
 				SDKROOT = macosx;
 				TEST_TARGET_NAME = "Twitchy-macOS";
@@ -744,7 +779,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rafaelreverberi.TwitchyiOSUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = ch.hivenet.TwitchyiOSUITests;
 				PRODUCT_NAME = TwitchyiOSUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -757,13 +792,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = W3227YDK2V;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-ios";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -774,12 +813,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = CNBB6EET8T;
 				INFOPLIST_FILE = Apps/macOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Twitchy;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to a streaming source you configure on your local network.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.rafaelreverberi.Twitchy-macOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "ch.hivenet.twitchy-macos";
 				SDKROOT = macosx;
 			};
 			name = Debug;

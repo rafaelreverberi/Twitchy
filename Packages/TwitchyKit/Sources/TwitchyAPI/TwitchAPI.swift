@@ -8,7 +8,7 @@ public struct Page<T: Codable & Sendable>: Codable, Sendable {
     public struct Pagination: Codable, Sendable { public var cursor: String? }
 }
 public struct TwitchUser: Codable, Sendable, Identifiable {
-    public var id: String; public var login: String; public var displayName: String; public var profileImageUrl: String; public var description: String
+    public var id: String; public var login: String; public var displayName: String; public var profileImageUrl: String; public var description: String; public var offlineImageUrl: String? = nil
 }
 public struct TwitchStream: Codable, Sendable, Identifiable {
     public var id: String; public var userId: String; public var userLogin: String; public var userName: String
@@ -23,7 +23,7 @@ public struct SearchChannel: Codable, Sendable, Identifiable {
     public var id: String; public var broadcasterLogin: String; public var displayName: String; public var gameName: String; public var title: String; public var isLive: Bool; public var thumbnailUrl: String
 }
 public struct TwitchCategory: Codable, Sendable, Identifiable { public var id: String; public var name: String; public var boxArtUrl: String }
-public struct Video: Codable, Sendable, Identifiable { public var id: String; public var userId: String; public var userLogin: String; public var title: String; public var thumbnailUrl: String; public var duration: String; public var url: String }
+public struct Video: Codable, Sendable, Identifiable { public var id: String; public var userId: String; public var userLogin: String; public var title: String; public var thumbnailUrl: String; public var duration: String; public var url: String; public var viewCount: Int? = nil; public var createdAt: String? = nil }
 public struct Clip: Codable, Sendable, Identifiable { public var id: String; public var title: String; public var thumbnailUrl: String; public var broadcasterName: String; public var url: String }
 public struct ChannelInfo: Codable, Sendable { public var broadcasterId: String; public var broadcasterLogin: String; public var broadcasterName: String; public var gameName: String; public var title: String }
 public struct Emote: Codable, Sendable, Identifiable { public var id: String; public var name: String; public var images: Images; public struct Images: Codable, Sendable { public var url1x: String; public var url2x: String; public var url4x: String; enum CodingKeys: String, CodingKey { case url1x = "url1X", url2x = "url2X", url4x = "url4X" } } }
@@ -57,11 +57,16 @@ public actor TwitchAPIClient {
     public func followedChannels(userID: String, after: String? = nil) async throws -> Page<FollowedChannel> { var q = ["user_id": userID, "first": "100"]; q["after"] = after; return try await get(FollowedChannel.self, "channels/followed", q) }
     public func followedStreams(userID: String, after: String? = nil) async throws -> Page<TwitchStream> { var q = ["user_id": userID, "first": "100"]; q["after"] = after; return try await get(TwitchStream.self, "streams/followed", q) }
     public func streams(login: String? = nil, gameID: String? = nil, after: String? = nil) async throws -> Page<TwitchStream> { var q = ["first": "30"]; q["user_login"] = login; q["game_id"] = gameID; q["after"] = after; return try await get(TwitchStream.self, "streams", q, cacheable: true) }
+    public func streams(logins: [String]) async throws -> Page<TwitchStream> {
+        guard !logins.isEmpty else { throw ClientError.message("Choose at least one channel.") }
+        let query = [URLQueryItem(name: "first", value: "100")] + logins.prefix(100).map { URLQueryItem(name: "user_login", value: $0) }
+        return try await http.decode(Page<TwitchStream>.self, request: request("streams", query: query))
+    }
     public func channel(id: String) async throws -> Page<ChannelInfo> { try await get(ChannelInfo.self, "channels", ["broadcaster_id": id]) }
     public func searchChannels(_ query: String, liveOnly: Bool = false, after: String? = nil) async throws -> Page<SearchChannel> { var q = ["query": query, "first": "30", "live_only": String(liveOnly)]; q["after"] = after; return try await get(SearchChannel.self, "search/channels", q, cacheable: true) }
     public func searchCategories(_ query: String, after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["query": query, "first": "30"]; q["after"] = after; return try await get(TwitchCategory.self, "search/categories", q, cacheable: true) }
     public func topCategories(after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["first": "12"]; q["after"] = after; return try await get(TwitchCategory.self, "games/top", q, cacheable: true) }
-    public func videos(userID: String, after: String? = nil) async throws -> Page<Video> { var q = ["user_id": userID, "first": "20"]; q["after"] = after; return try await get(Video.self, "videos", q) }
+    public func videos(userID: String, after: String? = nil, type: String? = nil) async throws -> Page<Video> { var q = ["user_id": userID, "first": "20"]; q["after"] = after; q["type"] = type; return try await get(Video.self, "videos", q) }
     public func clips(broadcasterID: String, after: String? = nil) async throws -> Page<Clip> { var q = ["broadcaster_id": broadcasterID, "first": "20"]; q["after"] = after; return try await get(Clip.self, "clips", q) }
     public func emotes(broadcasterID: String? = nil) async throws -> Page<Emote> { if let id = broadcasterID { return try await get(Emote.self, "chat/emotes", ["broadcaster_id": id]) }; return try await get(Emote.self, "chat/emotes/global") }
     public func badges(broadcasterID: String? = nil) async throws -> Page<BadgeSet> { if let id = broadcasterID { return try await get(BadgeSet.self, "chat/badges", ["broadcaster_id": id]) }; return try await get(BadgeSet.self, "chat/badges/global") }

@@ -355,3 +355,44 @@ actor RefreshGate: HTTPTransport {
     #expect(String(decoding: body, as: UTF8.self).contains("720p60"))
     #expect(try client.downloadFileRequest("job").timeoutInterval == 110)
 }
+
+@Test func channelLibraryRequestsArchivesAndPreservesPagination() async throws {
+    let body = """
+    {"data":[{"id":"v1","user_id":"1","user_login":"alice","title":"Earlier stream","thumbnail_url":"https://example.com/%{width}x%{height}.jpg","duration":"2h3m","url":"https://www.twitch.tv/videos/v1","view_count":120,"created_at":"2026-10-09T12:00:00Z"}],"pagination":{"cursor":"older"}}
+    """
+    let transport = FixtureTransport([body, "{\"data\":[]}"])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    let page = try await api.videos(userID: "1", after: "next", type: "archive")
+    #expect(page.data.first?.viewCount == 120)
+    #expect(page.data.first?.createdAt == "2026-10-09T12:00:00Z")
+    #expect(page.pagination?.cursor == "older")
+    _ = try await api.videos(userID: "1")
+    let requests = await transport.requests
+    let archiveQuery = URLComponents(url: try #require(requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+    #expect(archiveQuery.contains(.init(name: "type", value: "archive")))
+    #expect(archiveQuery.contains(.init(name: "after", value: "next")))
+    let recentQuery = URLComponents(url: try #require(requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+    #expect(!recentQuery.contains { $0.name == "type" })
+}
+
+@Test @MainActor func compactPlaybackControlsKeepSessionUntilExplicitStop() async throws {
+    let transport = FixtureTransport([capabilities, #"{"session_id":"compact","hls_url":"https://source.example/media/master.m3u8","qualities":["auto"]}"#, "{}"])
+    let client = try StreamingSourceClient(source: .init(name: "Fixture", baseURL: URL(string: "https://source.example")!), transport: transport)
+    let controller = PlaybackController()
+    await controller.start(client: client, request: .init(contentType: "live", channelLogin: "alice"))
+    #expect(controller.session?.sessionId == "compact")
+    controller.toggleMute()
+    #expect(controller.isMuted && controller.player.isMuted)
+    controller.toggleMute()
+    #expect(!controller.isMuted && !controller.player.isMuted)
+    controller.player.pause()
+    controller.togglePlayPause()
+    controller.togglePlayPause()
+    #expect(controller.isPaused)
+    #expect(controller.session?.sessionId == "compact")
+    #expect(!(await transport.requests).contains { $0.httpMethod == "DELETE" })
+    await controller.stop()
+    #expect(controller.session == nil && controller.player.currentItem == nil)
+    #expect(controller.isPaused)
+    #expect((await transport.requests).last?.httpMethod == "DELETE")
+}

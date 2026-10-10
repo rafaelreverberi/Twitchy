@@ -18,7 +18,7 @@ struct RootView: View {
         @Bindable var model = model
         Group {
             #if os(macOS)
-            split
+            macSplit
             #elseif os(tvOS)
             tabs
             #else
@@ -26,28 +26,118 @@ struct RootView: View {
             #endif
         }
         .background(TwitchyTheme.background)
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)); try Task.checkCancellation(); model.sampleViewing() }
+                catch { return }
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(45)); try Task.checkCancellation(); await model.sync.sync() }
+                catch { return }
+            }
+        }
+        .onChange(of: model.personal.data.oauthSettings) { _, _ in model.applyOAuthSettings() }
+        .onChange(of: model.playback.isPaused) { _, _ in model.sampleViewing() }
+        .onChange(of: model.playback.state) { _, _ in model.sampleViewing() }
+        .task(id: model.personal.interests.map(\.login)) { await model.refreshInterests() }
         .sheet(isPresented: $model.showingSettings) { SettingsView().environment(model) }
+        #if !os(macOS)
         .sheet(item: $model.selectedChannel) { selection in ChannelDetail(selection: selection).environment(model) }
+        #endif
         .sheet(isPresented: Binding(get: { !model.personal.data.onboardingComplete }, set: { if !$0 { model.personal.data.onboardingComplete = true } })) { WelcomeView().environment(model) }
         .sheet(isPresented: Binding(get: { model.localPlayback != nil }, set: { if !$0 { model.localPlayback = nil } })) { if let url = model.localPlayback { OfflinePlayer(url: url) } }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { do { try await model.auth.validate() } catch { model.error = error.localizedDescription } } }
+            if phase == .active { Task { await model.sync.sync(); await model.refreshInterests(); do { try await model.auth.validate() } catch { model.error = error.localizedDescription } } }
             if phase == .background {
                 model.chat.disconnect()
                 #if os(iOS)
                 UIApplication.shared.isIdleTimerDisabled = false
                 #endif
+                #if !os(macOS)
                 if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } }
+                #endif
             }
         }
         .onChange(of: model.playback.pictureInPictureActive) { _, active in
+            #if !os(macOS)
             if !active, scenePhase == .background { Task { await model.playback.stop() } }
+            #endif
         }
         .onChange(of: model.auth.status) { _, _ in Task { await model.refresh() } }
         .onChange(of: model.auth.session?.accessToken) { _, _ in Task { await model.refresh() } }
-        .onChange(of: model.sources.active?.baseURL) { _, _ in Task { await model.playback.stop() } }
-        .onChange(of: model.sources.activeID) { _, _ in model.personal.data.preferences.preferredQuality = "auto"; Task { await model.playback.stop() } }
+        .onChange(of: model.sources.active?.baseURL) { _, _ in
+            #if os(macOS)
+            model.stopDesktopPlayback()
+            #else
+            Task { await model.playback.stop() }
+            #endif
+        }
+        .onChange(of: model.sources.activeID) { _, _ in
+            model.personal.data.preferences.preferredQuality = "auto"
+            #if os(macOS)
+            model.stopDesktopPlayback()
+            #else
+            Task { await model.playback.stop() }
+            #endif
+        }
     }
+    #if os(macOS)
+    private var macSplit: some View {
+        NavigationSplitView {
+            List(selection: Binding(get: { model.selectedChannel == nil ? destination : nil }, set: { value in
+                model.selectedChannel = nil; destination = value
+            })) {
+                Section { HStack { BrandMark(); Text("Twitchy").font(.title2.bold()) }.padding(.vertical, 14) }
+                Section {
+                    ForEach(Destination.allCases) { item in
+                        Label(item.rawValue, systemImage: item.icon).tag(item)
+                            .accessibilityIdentifier("nav.\(item.rawValue.lowercased())")
+                    }
+                }
+            }
+            .listStyle(.sidebar).navigationTitle("Twitchy")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 14) {
+                    if model.nowPlaying != nil { DesktopNowPlayingView() }
+                    Button { model.showingSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading)
+                    }.buttonStyle(.plain).accessibilityIdentifier("settings.open")
+                }.padding(16).background(.bar)
+            }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+        } detail: {
+            NavigationStack {
+                Group {
+                    if let selection = model.selectedChannel {
+                        ChannelDetail(selection: selection).id(selection.id)
+                    } else if destination == .home || destination == nil {
+                        MacHomeView()
+                    } else { screen(destination!) }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .automatic) {
+                        Button { model.selectedChannel = nil; destination = .search } label: {
+                            Label("Search streamers, games or categories", systemImage: "magnifyingglass")
+                        }.keyboardShortcut("k", modifiers: .command).accessibilityIdentifier("search.open")
+                    }
+                }
+            }
+        }
+        .onChange(of: destination) { _, _ in model.selectedChannel = nil }
+        .frame(minWidth: 940, minHeight: 640)
+        .task(id: model.playback.session?.sessionId) {
+            while model.nowPlaying != nil && !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); model.saveDesktopPosition() }
+                catch { return }
+            }
+        }
+        .onChange(of: model.playback.state) { _, state in if state == .failed { model.retryDesktopPlaybackIfNeeded() } }
+        .onDisappear { model.stopDesktopPlayback() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stopDesktopPlayback() }
+    }
+    #endif
     #if !os(tvOS)
     private var split: some View {
         NavigationSplitView {
@@ -109,6 +199,7 @@ struct HomeView: View {
                 if let error = model.error { Notice(error) }
                 if model.api == nil { LoginPrompt() }
                 else {
+                    if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
                     if !model.personal.data.favorites.isEmpty { localSection("Favorites", logins: model.personal.data.favorites) }
                     let resumable = model.personal.data.history.filter { $0.contentID != nil && $0.position > 0 }

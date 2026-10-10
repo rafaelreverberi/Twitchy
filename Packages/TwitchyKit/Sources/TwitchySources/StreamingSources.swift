@@ -110,6 +110,8 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     public private(set) var sources: [StreamingSource] = []
     public private(set) var activeID: UUID?
     public private(set) var error: String?
+    @ObservationIgnored public var onChange: (() -> Void)?
+    @ObservationIgnored private var applyingRemote = false
     private let url: URL; private let secrets: any SecretStore
     private struct Saved: Codable { var sources: [StreamingSource]; var activeID: UUID? }
     public init(url: URL = URL.applicationSupportDirectory.appendingPathComponent("Twitchy/sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources")) {
@@ -145,5 +147,22 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
             do { try persist() } catch { self.error = "Source status could not be saved." }
         }
     }
-    private func persist() throws { do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(Saved(sources: sources, activeID: activeID)).write(to: url, options: .atomic); error = nil } catch { self.error = "Sources could not be saved."; throw error } }
+    public func credential(for id: UUID) throws -> String? { try secrets.read(id.uuidString).flatMap { String(data: $0, encoding: .utf8) } }
+    public func applySynced(source: StreamingSource?, id: UUID, credential: String?) throws {
+        applyingRemote = true; defer { applyingRemote = false }
+        if var source {
+            if let local = sources.first(where: { $0.id == id && $0.baseURL == source.baseURL }) {
+                source.capabilities = local.capabilities; source.serverVersion = local.serverVersion
+                source.lastSuccessfulCheck = local.lastSuccessfulCheck; source.connectionStatus = local.connectionStatus
+            }
+            try upsert(source, credential: credential ?? "")
+        }
+        else { try remove(id) }
+    }
+    public func applySyncedSelection(_ id: UUID?) throws {
+        applyingRemote = true; defer { applyingRemote = false }
+        activeID = id.flatMap { id in sources.contains { $0.id == id && $0.enabled } ? id : nil }
+        if activeID == nil { activeID = sources.first(where: \.enabled)?.id }; try persist()
+    }
+    private func persist() throws { do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(Saved(sources: sources, activeID: activeID)).write(to: url, options: .atomic); error = nil; if !applyingRemote { onChange?() } } catch { self.error = "Sources could not be saved."; throw error } }
 }

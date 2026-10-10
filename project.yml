@@ -1,6 +1,6 @@
 name: Twitchy
 options:
-  bundleIdPrefix: com.rafaelreverberi
+  bundleIdPrefix: ch.hivenet
   deploymentTarget:
     iOS: '17.0'
     macOS: '14.0'
@@ -16,6 +16,8 @@ settings:
     MARKETING_VERSION: '0.1.0'
     CURRENT_PROJECT_VERSION: '1'
     CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: CNBB6EET8T
+    CODE_SIGN_ENTITLEMENTS: Apps/Shared/Twitchy.entitlements
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_CFBundleDisplayName: Twitchy
     INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
@@ -29,10 +31,13 @@ targets:
   Twitchy-macOS:
     type: application
     platform: macOS
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.twitchy-macos
     sources: [Apps/Shared, Resources]
     info:
       path: Apps/macOS/Info.plist
       properties:
+        TwitchyCloudEnabled: true
         CFBundleURLTypes:
           - CFBundleURLSchemes: [twitchy]
         NSAppTransportSecurity:
@@ -57,10 +62,12 @@ targets:
     platform: iOS
     sources: [Apps/Shared, Resources]
     settings:
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.twitchy-ios
       TARGETED_DEVICE_FAMILY: '1,2'
     info:
       path: Apps/iOS/Info.plist
       properties:
+        TwitchyCloudEnabled: true
         UIBackgroundModes: [audio]
         CFBundleURLTypes:
           - CFBundleURLSchemes: [twitchy]
@@ -70,10 +77,13 @@ targets:
   Twitchy-tvOS:
     type: application
     platform: tvOS
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.twitchy-tvos
     sources: [Apps/Shared, Resources]
     info:
       path: Apps/tvOS/Info.plist
       properties:
+        TwitchyCloudEnabled: true
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     dependencies: *deps
@@ -83,6 +93,7 @@ targets:
     sources: [Tests/UI]
     settings:
       PRODUCT_NAME: TwitchyiOSUITests
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.TwitchyiOSUITests
     dependencies:
       - target: Twitchy-iOS
   TwitchyUITests:
@@ -90,6 +101,7 @@ targets:
     platform: macOS
     settings:
       PRODUCT_NAME: TwitchyUITests
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.TwitchyUITests
     sources: [Tests/UI]
     dependencies:
       - target: Twitchy-macOS
