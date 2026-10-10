@@ -14,6 +14,7 @@ struct ChannelDetail: View {
     @State private var clips: [Clip] = []
     @State private var stream: TwitchStream?
     @State private var error: String?
+    @State private var downloadNotice: String?
     @State private var fullscreen = false
     @State private var attempt = 0
     var body: some View {
@@ -32,6 +33,7 @@ struct ChannelDetail: View {
                     }
                     HStack { VStack(alignment: .leading) { Text(selection.name).font(.title.bold()); Text(stream?.title ?? "Channel details").foregroundStyle(.secondary); if let stream { Text("\(stream.gameName) · \(stream.viewerCount.formatted()) viewers").font(.caption) } }; Spacer(); Button { model.personal.favorite(selection.login) } label: { Image(systemName: model.personal.data.favorites.contains(selection.login) ? "star.fill" : "star") }.accessibilityLabel("Toggle favorite") }
                     HStack { Button("Watch live") { Task { await model.play(selection) } }.buttonStyle(.borderedProminent); Link("Follow on Twitch", destination: URL(string: "https://www.twitch.tv/\(selection.login)")!); Button("Fullscreen") { fullscreen = true }.disabled(model.playback.session == nil) }
+                    if let downloadNotice { Text(downloadNotice).foregroundStyle(.secondary) }
                     if let error { Notice(error) }
                     if let error = model.error { Notice(error) }
                     if let session = model.playback.session {
@@ -44,12 +46,13 @@ struct ChannelDetail: View {
                             Text(model.playback.state.rawValue).font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    if !videos.isEmpty { Text("Recent videos").font(.title2.bold()); ForEach(videos) { video in HStack { VStack(alignment: .leading) { Text(video.title); Text(video.duration).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "vod", contentID: video.id) } }; if let url = URL(string: video.url) { Link("Twitch", destination: url) } } } }
-                    if !clips.isEmpty { Text("Channel clips").font(.title2.bold()); ForEach(clips) { clip in HStack { Text(clip.title); Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "clip", contentID: clip.id) } }; if let url = URL(string: clip.url) { Link("Twitch", destination: url) } } } }
+                    if !videos.isEmpty { Text("Recent videos").font(.title2.bold()); ForEach(videos) { video in HStack { VStack(alignment: .leading) { Text(video.title); Text(video.duration).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "vod", contentID: video.id) } }; downloadButton(type: "vod", id: video.id); if let url = URL(string: video.url) { Link("Twitch", destination: url) } } } }
+                    if !clips.isEmpty { Text("Channel clips").font(.title2.bold()); ForEach(clips) { clip in HStack { Text(clip.title); Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "clip", contentID: clip.id) } }; downloadButton(type: "clip", id: clip.id); if let url = URL(string: clip.url) { Link("Twitch", destination: url) } } } }
                 }.padding(24)
             }.navigationTitle(selection.name).toolbar { ToolbarItem { Button("Done") { dismiss() } } }
         }
         .task {
+            if let id = model.sources.activeID { await model.sources.test(id) }
             broadcasterID = selection.broadcasterID
             do {
                 guard let api = model.api else { return }
@@ -79,6 +82,16 @@ struct ChannelDetail: View {
         .sheet(isPresented: $fullscreen) { nativePlayer.frame(minWidth: 300, minHeight: 240) }
         #if os(macOS)
         .frame(minWidth: 800, minHeight: 720)
+        #endif
+    }
+    @ViewBuilder private func downloadButton(type: String, id: String) -> some View {
+        #if !os(tvOS)
+        if model.sources.active?.capabilities?.clientSideDownloads == true {
+            Button("Download") { Task {
+                do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality); downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback." }
+                catch { downloadNotice = error.localizedDescription }
+            } }
+        }
         #endif
     }
     private var nativePlayer: some View {

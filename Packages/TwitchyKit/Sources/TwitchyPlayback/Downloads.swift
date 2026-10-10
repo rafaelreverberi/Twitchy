@@ -4,7 +4,7 @@ import TwitchyCore
 import TwitchySources
 
 public struct LocalDownload: Codable, Identifiable, Sendable {
-    public var id: UUID = UUID(); public var sourceID: UUID; public var job: DownloadJob; public var localFilename: String?; public var bytesPerSecond: Double?; public var contentType: String; public var contentID: String; public var authorizationReference: String
+    public var id: UUID = UUID(); public var sourceID: UUID; public var job: DownloadJob; public var localFilename: String?; public var bytesPerSecond: Double?; public var contentType: String; public var contentID: String; public var authorizationReference: String; public var requestedQuality: String?
 }
 private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let progress: @Sendable (Int64, Int64) -> Void
@@ -43,13 +43,14 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
         guard let filename = item.localFilename, filename == item.id.uuidString + ".mp4" else { return nil }
         return directory.appendingPathComponent(filename)
     }
-    public func enqueue(client: StreamingSourceClient, type: String, contentID: String, permission: String) async {
+    public func enqueue(client: StreamingSourceClient, type: String, contentID: String, permission: String = "", quality: String = "auto") async {
         #if os(tvOS)
         error = "Persistent downloads are unavailable on Apple TV."
         #else
         do {
-            let job = try await client.createDownload(contentType: type, contentID: contentID, authorizationReference: permission)
-            let item = LocalDownload(sourceID: client.source.id, job: job, contentType: type, contentID: contentID, authorizationReference: permission)
+            error = nil
+            let job = try await client.createDownload(contentType: type, contentID: contentID, authorizationReference: permission, requestedQuality: quality)
+            let item = LocalDownload(sourceID: client.source.id, job: job, contentType: type, contentID: contentID, authorizationReference: permission, requestedQuality: quality)
             items.insert(item, at: 0); save(); run(item.id, client: client)
         } catch { self.error = error.localizedDescription }
         #endif
@@ -65,7 +66,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
                 if job.status == .failed || job.status == .cancelled {
                     let remote = try await client.download(job.id)
                     if remote.status == .failed || remote.status == .cancelled {
-                        job = try await client.createDownload(contentType: original.contentType, contentID: original.contentID, authorizationReference: original.authorizationReference)
+                        job = try await client.createDownload(contentType: original.contentType, contentID: original.contentID, authorizationReference: original.authorizationReference, requestedQuality: original.requestedQuality ?? "auto")
                     } else { job = remote }
                     update(id) { $0.job = job }
                 }
@@ -93,6 +94,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
                     delegate.completion = continuation
                     let task = session.downloadTask(with: request); transfers[id] = task; task.resume()
                 }
+                if Task.isCancelled { try? FileManager.default.removeItem(at: destination); throw CancellationError() }
                 let size = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
                 update(id) { $0.localFilename = destination.lastPathComponent; $0.job.status = .completed; $0.job.progress = 1; $0.job.transferredBytes = size; $0.job.totalBytes = size }
             } catch {

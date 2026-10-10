@@ -30,8 +30,9 @@ public struct Capabilities: Codable, Sendable, Equatable {
     public var qualitySelection: Bool
     public var downloads: Bool
     public var authorizedDownloadsOnly: Bool
+    public var clientSideDownloads: Bool?
     public var adHandling: String?
-    public init(apiVersion: String = "v1", playbackProtocols: [String] = ["hls"], live: Bool = true, vod: Bool = false, clips: Bool = false, qualitySelection: Bool = false, downloads: Bool = false, authorizedDownloadsOnly: Bool = true, adHandling: String? = nil) { self.apiVersion = apiVersion; self.playbackProtocols = playbackProtocols; self.live = live; self.vod = vod; self.clips = clips; self.qualitySelection = qualitySelection; self.downloads = downloads; self.authorizedDownloadsOnly = authorizedDownloadsOnly; self.adHandling = adHandling }
+    public init(apiVersion: String = "v1", playbackProtocols: [String] = ["hls"], live: Bool = true, vod: Bool = false, clips: Bool = false, qualitySelection: Bool = false, downloads: Bool = false, authorizedDownloadsOnly: Bool = true, adHandling: String? = nil, clientSideDownloads: Bool? = nil) { self.apiVersion = apiVersion; self.playbackProtocols = playbackProtocols; self.live = live; self.vod = vod; self.clips = clips; self.qualitySelection = qualitySelection; self.downloads = downloads; self.authorizedDownloadsOnly = authorizedDownloadsOnly; self.adHandling = adHandling; self.clientSideDownloads = clientSideDownloads }
 }
 public struct Health: Codable, Sendable { public var status: String; public var serverVersion: String; public var apiVersion: String }
 public struct StreamingSource: Codable, Identifiable, Sendable, Equatable {
@@ -70,7 +71,7 @@ public struct StreamingSourceClient: Sendable {
     private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
         guard source.enabled else { throw ClientError.noSource }
         let url = source.baseURL.appendingPathComponent("v1").appendingPathComponent(path)
-        var r = URLRequest(url: url); r.timeoutInterval = (method == "POST" && path == "playback/sessions") ? 110 : 20; r.httpMethod = method; r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Accept")
+        var r = URLRequest(url: url); r.timeoutInterval = ((method == "POST" && path == "playback/sessions") || (path.hasPrefix("downloads/") && path.hasSuffix("/file"))) ? 110 : 20; r.httpMethod = method; r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Accept")
         if body != nil { r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         if case .bearer(let token) = authentication { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         return r
@@ -94,10 +95,11 @@ public struct StreamingSourceClient: Sendable {
     }
     private func identifier(_ id: String) throws -> String { guard !id.isEmpty, id.utf8.count < 200, id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { throw ClientError.invalidResponse }; return id }
     public func endSession(_ id: String) async throws { _ = try await http.response(request("playback/sessions/\(identifier(id))", method: "DELETE")) }
-    public func createDownload(contentType: String, contentID: String, authorizationReference: String) async throws -> DownloadJob {
-        let caps = try await capabilities(); guard caps.downloads, caps.authorizedDownloadsOnly else { throw ClientError.unsupported }
-        struct Body: Codable { var contentType: String; var contentId: String; var authorizationReference: String }
-        return try await decode(DownloadJob.self, request("downloads", method: "POST", body: JSONCoding.encoder().encode(Body(contentType: contentType, contentId: contentID, authorizationReference: authorizationReference))))
+    public func createDownload(contentType: String, contentID: String, authorizationReference: String = "", requestedQuality: String = "auto") async throws -> DownloadJob {
+        let caps = try await capabilities(); guard caps.downloads, caps.authorizedDownloadsOnly || caps.clientSideDownloads == true else { throw ClientError.unsupported }
+        if caps.authorizedDownloadsOnly && authorizationReference.isEmpty { throw ClientError.message("This source requires a permission reference.") }
+        struct Body: Codable { var contentType: String; var contentId: String; var authorizationReference: String; var requestedQuality: String? }
+        return try await decode(DownloadJob.self, request("downloads", method: "POST", body: JSONCoding.encoder().encode(Body(contentType: contentType, contentId: contentID, authorizationReference: authorizationReference, requestedQuality: caps.clientSideDownloads == true ? requestedQuality : nil))))
     }
     public func download(_ id: String) async throws -> DownloadJob { try await decode(DownloadJob.self, request("downloads/\(identifier(id))")) }
     public func cancelDownload(_ id: String) async throws { _ = try await http.response(request("downloads/\(identifier(id))", method: "DELETE")) }

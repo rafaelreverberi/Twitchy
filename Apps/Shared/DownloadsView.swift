@@ -17,19 +17,19 @@ struct DownloadsView: View {
             EmptyState("Downloads unavailable on Apple TV", detail: "Use Twitchy on iPhone, iPad or Mac to store authorized media offline.", symbol: "arrow.down.circle")
             #else
             if model.sources.active?.capabilities?.downloads == true {
-                Section("Request an authorized download") {
+                Section("Download to this device") {
                     Picker("Content", selection: $type) { Text("Video").tag("vod"); Text("Clip").tag("clip") }
                     TextField("Content ID", text: $contentID)
-                    TextField("Permission reference issued by your source", text: $permission)
-                    Button("Add download") { Task { do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: contentID, permission: permission) } catch { self.error = error.localizedDescription } } }.disabled(contentID.isEmpty || permission.isEmpty)
+                    if model.sources.active?.capabilities?.authorizedDownloadsOnly == true { TextField("Permission reference issued by your source", text: $permission) }
+                    Button("Add download") { Task { do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: contentID, permission: permission, quality: model.personal.data.preferences.preferredQuality) } catch { self.error = error.localizedDescription } } }.disabled(contentID.isEmpty || (model.sources.active?.capabilities?.authorizedDownloadsOnly == true && permission.isEmpty))
                 }
-            } else { EmptyState("No download-capable source", detail: "Select and test a source that supports authorized downloads. Twitchy does not download arbitrary Twitch media.", symbol: "arrow.down.circle") }
+            } else { EmptyState("No download-capable source", detail: "Select a source that supports video and clip downloads.", symbol: "arrow.down.circle") }
             ForEach(model.downloads.items) { item in
                 Section {
                     Text(item.job.filename ?? item.contentID).font(.headline)
                     Text(item.job.status.rawValue.capitalized).foregroundStyle(.secondary)
-                    ProgressView(value: item.job.progress)
-                    Text("\(Int(item.job.progress * 100))% · \(ByteCountFormatter.string(fromByteCount: item.job.transferredBytes, countStyle: .file))").font(.caption)
+                    if item.job.totalBytes != nil || item.job.status == .completed { ProgressView(value: item.job.progress) } else if item.job.status == .transferring { ProgressView() }
+                    Text((item.job.totalBytes != nil ? "\(Int(item.job.progress * 100))% · " : "") + ByteCountFormatter.string(fromByteCount: item.job.transferredBytes, countStyle: .file)).font(.caption)
                     if let speed = item.bytesPerSecond, item.job.status == .transferring { Text("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s").font(.caption) }
                     HStack {
                         if item.job.status == .completed, let url = model.downloads.file(for: item) { Button("Play offline") { model.localPlayback = url } }
@@ -40,7 +40,7 @@ struct DownloadsView: View {
                 }
             }
             #endif
-        }
+        }.task(id: model.sources.activeID) { if let id = model.sources.activeID { await model.sources.test(id) } }
     }
     private func originalClient(_ sourceID: UUID) throws -> StreamingSourceClient {
         guard let source = model.sources.sources.first(where: { $0.id == sourceID }) else { throw ClientError.message("Restore the original source to retry this download.") }

@@ -337,3 +337,21 @@ actor RefreshGate: HTTPTransport {
     let old = try JSONCoding.decoder().decode(PlaybackSession.self, from: Data(#"{"session_id":"s1","hls_url":"https://cdn.example/a.m3u8","qualities":["auto","1080p60"]}"#.utf8))
     #expect(old.qualityLabel(requested: "auto") == "Best")
 }
+
+@Test func clientDownloadsRequireExplicitCapabilityAndPreserveLegacyPermission() async throws {
+    let source = StreamingSource(name: "Fixture", baseURL: URL(string: "https://source.example")!)
+    let publicCaps = capabilities.replacingOccurrences(of: "\"downloads\":false", with: "\"downloads\":true").replacingOccurrences(of: "\"authorized_downloads_only\":true", with: "\"authorized_downloads_only\":false")
+    let denied = try StreamingSourceClient(source: source, transport: FixtureTransport([publicCaps]))
+    await #expect(throws: ClientError.unsupported) { try await denied.createDownload(contentType: "vod", contentID: "123") }
+    let legacyCaps = capabilities.replacingOccurrences(of: "\"downloads\":false", with: "\"downloads\":true")
+    let legacy = try StreamingSourceClient(source: source, transport: FixtureTransport([legacyCaps]))
+    await #expect(throws: (any Error).self) { try await legacy.createDownload(contentType: "vod", contentID: "123") }
+    let optedIn = publicCaps.dropLast() + ",\"client_side_downloads\":true}"
+    let transport = FixtureTransport([String(optedIn), "{\"id\":\"job\",\"status\":\"ready\",\"progress\":0,\"transferred_bytes\":0}"])
+    let client = try StreamingSourceClient(source: source, transport: transport)
+    #expect(try await client.createDownload(contentType: "vod", contentID: "123", requestedQuality: "720p60").status == .ready)
+    let request = try #require(await transport.requests.last)
+    let body = try #require(request.httpBody)
+    #expect(String(decoding: body, as: UTF8.self).contains("720p60"))
+    #expect(try client.downloadFileRequest("job").timeoutInterval == 110)
+}

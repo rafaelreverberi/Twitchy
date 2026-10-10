@@ -37,3 +37,7 @@ DELETE /v1/downloads/{downloadId} cancels/deletes the job and returns idempotent
 4. Implement authorized MP4 preparation, permission-reference validation and streaming responses if downloads are supported.
 5. Add contract tests using the checked-in fixture examples, malformed input, authorization/ownership, expired signatures, interruptions and cleanup.
 6. Test the Apple app against the backend on physical devices and review Twitch distribution/advertising requirements before launch.
+
+## Public client-download extension
+
+An explicitly opted-in source can advertise `client_side_downloads: true`, `downloads: true` and `authorized_downloads_only: false` for manual public VOD/clip downloads. The app accepts this mode without a permission reference; legacy prepared-file sources still require independently checked authorization. POST additionally sends `requested_quality` from the default preference only in client-download mode. A ready job means transfer may start. The authenticated `/file` route returns video/mp4 and Content-Disposition but can omit unknown Content-Length and total_bytes. The app streams into a UUID-named local file, displays bytes/speed with indeterminate progress for unknown lengths, and only offers offline playback after successful completion. Failed transfers restart; no server-side recording or automatic downloads are requested. See the companion server's `docs/RECORDED.md` for resource limits and filtering details.
