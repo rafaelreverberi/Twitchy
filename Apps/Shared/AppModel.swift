@@ -26,8 +26,8 @@ import TwitchyChat
     var showingSettings = false
     var selectedChannel: ChannelSelection?
     var localPlayback: URL?
-    var clientID = UserDefaults.standard.string(forKey: "oauth.clientID") ?? "" { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID") } }
-    var deviceClientID = UserDefaults.standard.string(forKey: "oauth.deviceClientID") ?? "" { didSet { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID") } }
+    var clientID = UserDefaults.standard.string(forKey: "oauth.clientID") ?? "fvgm8ut01pboy0rvn1f6dkdqxw6rft" { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID") } }
+    var deviceClientID = UserDefaults.standard.string(forKey: "oauth.deviceClientID").flatMap { $0.isEmpty ? nil : $0 } ?? "fvgm8ut01pboy0rvn1f6dkdqxw6rft" { didSet { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID") } }
     var redirect = UserDefaults.standard.string(forKey: "oauth.redirect").flatMap { $0.isEmpty ? nil : $0 } ?? "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html" { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect") } }
     private var cachedAPI: TwitchAPIClient?
     private var cachedToken: String?
@@ -38,7 +38,16 @@ import TwitchyChat
     }
     var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async { await auth.restore(); await refresh() }
-    func login(chat: Bool = false) async { await auth.login(configuration: configuration, chat: chat); await refresh() }
+    func login(chat: Bool = false) async {
+        guard !auth.isSigningIn else { showingSettings = true; return }
+        showingSettings = true
+        await auth.login(configuration: configuration, chat: chat)
+        #if os(macOS)
+        if let value = auth.deviceCode?.verificationUri, let url = URL(string: value), url.scheme == "https", url.host == "www.twitch.tv" || url.host == "twitch.tv" { NSWorkspace.shared.open(url) }
+        #elseif os(iOS)
+        if let value = auth.deviceCode?.verificationUri, let url = URL(string: value), url.scheme == "https", url.host == "www.twitch.tv" || url.host == "twitch.tv" { await UIApplication.shared.open(url) }
+        #endif
+    }
     private var refreshID = UUID()
     func refresh() async {
         let current = UUID(); refreshID = current

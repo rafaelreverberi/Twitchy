@@ -10,7 +10,7 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 20) { RemoteImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? "Connect to follow your favorites").foregroundStyle(.secondary); Text(model.auth.status).font(.caption).foregroundStyle(TwitchyTheme.live) } }
                 if let error = model.auth.error { Notice(error) }
-                if model.auth.session == nil { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.clientID.isEmpty && model.deviceClientID.isEmpty) }
+                if model.auth.status != "Connected" { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
                 else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
                 Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
                 Divider()
@@ -35,17 +35,48 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("Twitch account") {
-                    TextField("Browser OAuth Client ID", text: $model.clientID).accessibilityIdentifier("oauth.clientID")
-                    TextField("Registered redirect URI", text: $model.redirect)
-                    TextField("Public Device Flow Client ID", text: $model.deviceClientID)
-                    Text("Client IDs are public configuration. Never enter a client secret.").font(.caption).foregroundStyle(.secondary)
-                    Button("Sign in with Twitch") { Task { await model.login() } }
-                    Button("Authorize chat & sign in") { Task { await model.login(chat: true) } }
-                    Button("Use device authorization") { Task { await model.auth.startDeviceLogin(clientID: model.deviceClientID, chat: true) } }
-                    if let code = model.auth.deviceCode { Text("Visit twitch.tv/activate and enter:"); Text(code.userCode).font(.title.monospaced().bold()); if let url = URL(string: code.verificationUri) { Link("Open Twitch activation", destination: url) } }
-                    Text(model.auth.status)
-                    if let session = model.auth.session { Text("Permissions: \(session.scopes.joined(separator: ", "))").font(.caption); Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.auth.logout(); await model.refresh() } } }
+                    Text(model.auth.session.map { "Signed in as @\($0.login)" } ?? "Connect your Twitch account").font(.headline)
+                    Text(model.auth.status).foregroundStyle(.secondary)
+                    if model.auth.deviceCode == nil {
+                        if model.auth.status != "Connected" {
+                            Button("Sign in with Twitch") { Task { await model.login() } }.disabled(model.auth.isSigningIn).accessibilityIdentifier("oauth.signIn")
+                        }
+                        if model.auth.status == "Connected", model.auth.session?.scopes.contains("user:read:chat") == false {
+                            Button("Enable Twitch chat") { Task { await model.login(chat: true) } }
+                        }
+                    }
+                    if let code = model.auth.deviceCode {
+                        Text("Confirm access in your browser. Twitchy will finish signing in automatically.")
+                        if let url = URL(string: code.verificationUri), url.scheme == "https", url.host == "www.twitch.tv" || url.host == "twitch.tv" { Link("Continue on Twitch", destination: url) }
+                        Text("If asked, enter this code:").font(.caption)
+                        Text(code.userCode).font(.title.monospaced().bold())
+                        ProgressView("Waiting for Twitch")
+                        Button("Cancel sign-in") { model.auth.cancelLogin() }
+                    }
+                    Text("Your sign-in is stored securely on this device and renewed automatically.").font(.caption).foregroundStyle(.secondary)
+                    if model.auth.session != nil { Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.auth.logout(); await model.refresh() } } }
                     if let error = model.auth.error { Notice(error) }
+                }
+                Section("Advanced") {
+                    #if os(tvOS)
+                    NavigationLink("Twitch application settings") {
+                        Form {
+                            TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
+                            Text("Requires Client Type: Public in the Twitch Developer Console.")
+                        }.navigationTitle("Twitch application")
+                    }
+                    #else
+                    DisclosureGroup("Twitch application settings") {
+                        TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
+                        Text("Requires Client Type: Public in the Twitch Developer Console. No client secret is needed.").font(.caption).foregroundStyle(.secondary)
+                        #if !os(tvOS)
+                        TextField("Legacy browser Client ID", text: $model.clientID)
+                        TextField("Registered redirect URI", text: $model.redirect)
+                        Button("Use legacy browser sign-in") { Task { await model.auth.loginWithBrowser(configuration: model.configuration) } }
+                        Text("Legacy browser sign-in cannot renew automatically. Use only with a Confidential app registration.").font(.caption).foregroundStyle(.secondary)
+                        #endif
+                    }.accessibilityIdentifier("oauth.advanced")
+                    #endif
                 }
                 Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
                 Section("Playback") {

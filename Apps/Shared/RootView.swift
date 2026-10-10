@@ -84,7 +84,7 @@ struct WelcomeView: View {
                     Text("Browse live channels, keep up with your follows, and join chat directly through Twitch.").foregroundStyle(.secondary)
                     Label("Bring your streaming source", systemImage: "server.rack").font(.headline)
                     Text("Video comes from your own compatible server. You can connect Twitch and browse before adding a source.").foregroundStyle(.secondary)
-                    Button("Configure Twitch & sign in") { model.personal.data.onboardingComplete = true; model.showingSettings = true }.buttonStyle(.borderedProminent)
+                    Button("Sign in with Twitch") { model.personal.data.onboardingComplete = true; Task { await model.login() } }.buttonStyle(.borderedProminent)
                     Button("Add a streaming source") { sources = true }.buttonStyle(.bordered)
                     Button("Start browsing") { model.personal.data.onboardingComplete = true }.accessibilityIdentifier("onboarding.complete")
                     Text("An independent third-party client. Not affiliated with Twitch.").font(.caption).foregroundStyle(.secondary)
@@ -98,7 +98,7 @@ struct WelcomeView: View {
 }
 struct LoginPrompt: View {
     @Environment(AppModel.self) private var model
-    var body: some View { VStack { EmptyState("Connect with Twitch", detail: "Twitch requires an access token for discovery. Sign in to browse channels and categories, even without a streaming source.", symbol: "person.crop.circle.badge.checkmark"); Button("Set up Twitch") { model.showingSettings = true }.buttonStyle(.borderedProminent) }.padding(.bottom, 32) }
+    var body: some View { VStack { EmptyState("Connect with Twitch", detail: "Twitch requires an access token for discovery. Sign in to browse channels and categories, even without a streaming source.", symbol: "person.crop.circle.badge.checkmark"); Button(model.auth.session == nil ? "Sign in with Twitch" : "Reconnect") { Task { if model.auth.session != nil { try? await model.auth.validate(); await model.refresh() }; if model.auth.session == nil { await model.login() } else if model.api == nil { model.showingSettings = true } } }.buttonStyle(.borderedProminent) }.padding(.bottom, 32) }
 }
 struct HomeView: View {
     @Environment(AppModel.self) private var model
