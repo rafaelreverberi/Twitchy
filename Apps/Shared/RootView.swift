@@ -22,7 +22,7 @@ struct RootView: View {
             #elseif os(tvOS)
             tabs
             #else
-            if sizeClass == .regular { split } else { tabs }
+            MobileRootView()
             #endif
         }
         .background(TwitchyTheme.background)
@@ -33,6 +33,9 @@ struct RootView: View {
             }
         }
         .task {
+            #if os(iOS)
+            guard !model.isMobileFixture else { return }
+            #endif
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(45)); try Task.checkCancellation(); await model.sync.sync() }
                 catch { return }
@@ -43,25 +46,35 @@ struct RootView: View {
         .onChange(of: model.playback.state) { _, _ in model.sampleViewing() }
         .task(id: model.personal.interests.map(\.login)) { await model.refreshInterests() }
         .sheet(isPresented: $model.showingSettings) { SettingsView().environment(model) }
-        #if !os(macOS)
+        #if os(tvOS)
         .sheet(item: $model.selectedChannel) { selection in ChannelDetail(selection: selection).environment(model) }
         #endif
         .sheet(isPresented: Binding(get: { !model.personal.data.onboardingComplete }, set: { if !$0 { model.personal.data.onboardingComplete = true } })) { WelcomeView().environment(model) }
         .sheet(isPresented: Binding(get: { model.localPlayback != nil }, set: { if !$0 { model.localPlayback = nil } })) { if let url = model.localPlayback { OfflinePlayer(url: url) } }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.sync.sync(); await model.refreshInterests(); do { try await model.auth.validate() } catch { model.error = error.localizedDescription } } }
+            #if os(iOS)
+            if phase == .active { model.mobile.enterForeground() }
+            #endif
+            if phase == .active { Task {
+                #if os(iOS)
+                guard !model.isMobileFixture else { return }
+                #endif
+                await model.sync.sync(); await model.refreshInterests(); do { try await model.auth.validate() } catch { model.error = error.localizedDescription }
+            } }
             if phase == .background {
                 model.chat.disconnect()
                 #if os(iOS)
                 UIApplication.shared.isIdleTimerDisabled = false
                 #endif
-                #if !os(macOS)
+                #if os(iOS)
+                model.mobile.enterBackground()
+                #elseif os(tvOS)
                 if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } }
                 #endif
             }
         }
         .onChange(of: model.playback.pictureInPictureActive) { _, active in
-            #if !os(macOS)
+            #if os(tvOS)
             if !active, scenePhase == .background { Task { await model.playback.stop() } }
             #endif
         }
@@ -70,6 +83,8 @@ struct RootView: View {
         .onChange(of: model.sources.active?.baseURL) { _, _ in
             #if os(macOS)
             model.stopDesktopPlayback()
+            #elseif os(iOS)
+            model.mobile.sourceChanged()
             #else
             Task { await model.playback.stop() }
             #endif
@@ -78,6 +93,8 @@ struct RootView: View {
             model.personal.data.preferences.preferredQuality = "auto"
             #if os(macOS)
             model.stopDesktopPlayback()
+            #elseif os(iOS)
+            model.mobile.sourceChanged()
             #else
             Task { await model.playback.stop() }
             #endif
@@ -195,10 +212,18 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 8) { Text("Your live lineup").font(.largeTitle.bold()); Text("Find a stream. Settle in.").foregroundStyle(.secondary) }; Spacer(); if model.loading { ProgressView() } else { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh streams") } }
+                HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 8) { Text("Your live lineup").font(.title.bold()); Text("Your favorites. New discoveries.").foregroundStyle(.secondary) }; Spacer(); if model.loading { ProgressView() } else { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh streams") } }
                 if let error = model.error { Notice(error) }
                 if model.api == nil { LoginPrompt() }
                 else {
+                    #if os(iOS)
+                    if let featured = model.recommendedStreams.first ?? model.followedStreams.first ?? model.streams.first {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("In the spotlight").font(.title2.bold())
+                            StreamCard(stream: featured)
+                        }
+                    }
+                    #endif
                     if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
                     if !model.personal.data.favorites.isEmpty { localSection("Favorites", logins: model.personal.data.favorites) }
@@ -221,7 +246,14 @@ struct HomeView: View {
 }
 struct StreamSection: View {
     var title: String; var streams: [TwitchStream]
-    var body: some View { VStack(alignment: .leading, spacing: 16) { Text(title).font(.title2.bold()); LazyVGrid(columns: [GridItem(.adaptive(minimum: 270, maximum: 440))], spacing: 24) { ForEach(streams) { StreamCard(stream: $0) } } } }
+    private var columns: [GridItem] {
+        #if os(iOS)
+        [GridItem(.adaptive(minimum: 155, maximum: 440))]
+        #else
+        [GridItem(.adaptive(minimum: 270, maximum: 440))]
+        #endif
+    }
+    var body: some View { VStack(alignment: .leading, spacing: 16) { Text(title).font(.title2.bold()); LazyVGrid(columns: columns, spacing: 24) { ForEach(streams) { StreamCard(stream: $0) } } } }
 }
 struct StreamCard: View {
     @Environment(AppModel.self) private var model
@@ -229,7 +261,13 @@ struct StreamCard: View {
     let stream: TwitchStream
     @State private var hovered = false
     var body: some View {
-        Button { model.open(login: stream.userLogin, name: stream.userName, id: stream.userId) } label: {
+        Button {
+            #if os(iOS)
+            model.mobile.start(.init(login: stream.userLogin, name: stream.userName, broadcasterID: stream.userId), title: stream.title, category: stream.gameName, avatar: model.avatars[stream.userId])
+            #else
+            model.open(login: stream.userLogin, name: stream.userName, id: stream.userId)
+            #endif
+        } label: {
             VStack(alignment: .leading, spacing: 10) {
                 RemoteImage(stream.thumbnail).aspectRatio(16 / 9, contentMode: .fit).overlay(alignment: .topLeading) { Text("LIVE").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 5).background(TwitchyTheme.live, in: RoundedRectangle(cornerRadius: 5)).foregroundStyle(.black).padding(10) }.overlay(alignment: .bottomLeading) { Text("\(stream.viewerCount.formatted()) viewers").font(.caption).padding(6).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 4)).padding(10) }.clipShape(RoundedRectangle(cornerRadius: 12))
                 Text(stream.userName).font(.headline).foregroundStyle(.primary)

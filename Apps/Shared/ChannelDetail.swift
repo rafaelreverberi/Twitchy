@@ -35,11 +35,15 @@ struct ChannelDetail: View {
         Group {
             #if os(macOS)
             macContent
+            #elseif os(iOS)
+            MobileChannelView(selection: selection)
             #else
             legacyContent
             #endif
         }
+        #if !os(iOS)
         .task { await loadMetadata() }
+        #endif
         .task(id: selection.id) {
             #if os(macOS)
             if selection.returnToPlayback, let active = model.nowPlaying, active.selection.id == selection.id {
@@ -48,6 +52,14 @@ struct ChannelDetail: View {
                 watching = true
                 model.startDesktopPlayback(selection, type: type, contentID: id)
             }
+            #elseif os(iOS)
+            // iOS channel and player lifecycle are owned by MobileRootView.
+            #elseif os(iOS)
+            if selection.contentID != nil || model.personal.data.preferences.autoplay {
+                mobilePlay(type: selection.contentType ?? "live", id: selection.contentID)
+                await mobilePlaybackTask?.value
+                if selection.resumePosition > 0 { await model.playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600)) }
+            }
             #else
             if let type = selection.contentType, let id = selection.contentID {
                 await model.play(selection, contentType: type, contentID: id)
@@ -55,7 +67,7 @@ struct ChannelDetail: View {
             } else if model.personal.data.preferences.autoplay { await model.play(selection) }
             #endif
         }
-        #if !os(macOS)
+        #if os(tvOS)
         .task(id: model.playback.session?.sessionId) {
             while model.playback.session != nil && !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); savePosition() } catch { return }
@@ -63,16 +75,20 @@ struct ChannelDetail: View {
         }
         #endif
         .onDisappear {
-            savePosition(); model.chat.disconnect()
-            #if !os(macOS)
+            savePosition()
+            #if !os(iOS)
+            model.chat.disconnect()
+            #endif
+            #if os(tvOS)
             if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } }
             #endif
         }
-        #if !os(macOS)
+        #if os(tvOS)
         .onChange(of: model.playback.state) { _, state in
             if state == .failed, model.personal.data.preferences.retryPlayback, attempt < 2 { attempt += 1; Task { try? await Task.sleep(for: .seconds(2 * attempt)); guard !Task.isCancelled else { return }; await model.playback.retry() } }
         }
         #endif
+        #if !os(iOS)
         .sheet(isPresented: $fullscreen) {
             #if os(macOS)
             NativePlayer(player: model.playback.player, pictureInPicture: false) { _ in }.frame(minWidth: 800, minHeight: 450)
@@ -80,6 +96,7 @@ struct ChannelDetail: View {
             nativePlayer.frame(minWidth: 300, minHeight: 240)
             #endif
         }
+        #endif
     }
     private var legacyContent: some View {
         NavigationStack {
@@ -106,7 +123,7 @@ struct ChannelDetail: View {
                                 Button("Best") { Task { await model.playback.changeQuality("auto") } }
                                 ForEach(session.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
                             }
-                            Button(model.playback.player.isMuted ? "Unmute" : "Mute") { model.playback.player.isMuted.toggle() }
+                            Button(model.playback.isMuted ? "Unmute" : "Mute") { model.playback.toggleMute() }
                             Text(model.playback.state.rawValue).font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -277,9 +294,21 @@ struct ChatPanel: View {
                     Button("Jump to latest") { follow = true; if let last = model.chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
                     #endif
                 }
+                #if os(iOS)
+                Spacer(minLength: 0)
+                #endif
                 HStack { TextField("Send a message", text: $text).onSubmit { send() }.accessibilityIdentifier("chat.input"); Button { send() } label: { Image(systemName: "paperplane.fill") }.disabled(text.isEmpty || sending || model.chat.status != "Connected").accessibilityLabel("Send message") }
             }
-        }.padding(16).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12))
+        }
+        #if os(iOS)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        #endif
+        .padding(16)
+        #if os(iOS)
+        .background(TwitchyTheme.secondary)
+        #else
+        .background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12))
+        #endif
         .task(id: (broadcasterID ?? "") + (model.auth.session?.accessToken ?? "")) {
             guard let id = broadcasterID, let api = model.api, let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
             model.chat.connect(api: api, broadcasterID: id, userID: session.userID)
