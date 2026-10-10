@@ -66,10 +66,14 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
             do {
                 var job = original.job
                 if job.status == .failed || job.status == .cancelled {
-                    let remote = try await client.download(job.id)
-                    if remote.status == .failed || remote.status == .cancelled {
+                    do {
+                        let remote = try await client.download(job.id)
+                        if remote.status == .failed || remote.status == .cancelled {
+                            job = try await client.createDownload(contentType: original.contentType, contentID: original.contentID, authorizationReference: original.authorizationReference, requestedQuality: original.requestedQuality ?? "auto")
+                        } else { job = remote }
+                    } catch let error as SourceAPIError where error.status == 404 {
                         job = try await client.createDownload(contentType: original.contentType, contentID: original.contentID, authorizationReference: original.authorizationReference, requestedQuality: original.requestedQuality ?? "auto")
-                    } else { job = remote }
+                    }
                     update(id) { $0.job = job }
                 }
                 let preparationDeadline = Date().addingTimeInterval(900)
