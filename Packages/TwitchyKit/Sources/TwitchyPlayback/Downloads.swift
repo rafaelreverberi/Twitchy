@@ -13,6 +13,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
     private var lastProgress = Date.distantPast
     init(destination: URL, progress: @escaping @Sendable (Int64, Int64) -> Void) { self.destination = destination; self.progress = progress }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let response = downloadTask.response as? HTTPURLResponse, response.statusCode == 200, response.mimeType == "video/mp4" else { return }
         if Date().timeIntervalSince(lastProgress) >= 0.25 || totalBytesWritten == totalBytesExpectedToWrite { lastProgress = .now; progress(totalBytesWritten, totalBytesExpectedToWrite) }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
@@ -58,6 +59,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
     public func resume(_ id: UUID, client: StreamingSourceClient) { guard let item = items.first(where: { $0.id == id }), item.sourceID == client.source.id else { error = "Select the original source to resume this download."; return }; run(id, client: client) }
     private func run(_ id: UUID, client: StreamingSourceClient) {
         guard tasks[id] == nil else { return }
+        error = nil
         tasks[id] = Task { [weak self] in
             guard let self, let original = items.first(where: { $0.id == id }) else { return }
             defer { tasks[id] = nil; transfers[id] = nil; save() }
