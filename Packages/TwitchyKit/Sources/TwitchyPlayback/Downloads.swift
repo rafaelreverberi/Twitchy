@@ -87,7 +87,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
                     Task { @MainActor [weak self] in self?.update(id) { item in guard item.job.status == .transferring else { return }; item.job.transferredBytes = written; item.job.totalBytes = total > 0 ? total : nil; item.job.progress = total > 0 ? Double(written) / Double(total) : 0; item.bytesPerSecond = Double(written) / max(1, Date().timeIntervalSince(started)) } }
                 }
                 let config = URLSessionConfiguration.ephemeral; config.urlCredentialStorage = nil; config.httpCookieStorage = nil
-                config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 7200
+                config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 43200
                 let delegateQueue = OperationQueue(); delegateQueue.maxConcurrentOperationCount = 1
                 let session = URLSession(configuration: config, delegate: delegate, delegateQueue: delegateQueue)
                 defer { session.invalidateAndCancel() }
