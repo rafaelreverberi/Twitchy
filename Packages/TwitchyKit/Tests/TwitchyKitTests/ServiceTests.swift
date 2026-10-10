@@ -328,3 +328,12 @@ actor RefreshGate: HTTPTransport {
     let body = try #require(requests[1].httpBody)
     #expect(String(decoding: body, as: UTF8.self).contains("720p60"))
 }
+
+@Test func bestQualityUsesServerSelectionAndSupportsOlderSources() throws {
+    let data = Data(#"{"session_id":"s1","hls_url":"https://cdn.example/a.m3u8","qualities":["auto","720p60","1080p60"],"selected_quality":"720p60"}"#.utf8)
+    let value = try JSONCoding.decoder().decode(PlaybackSession.self, from: data)
+    #expect(value.qualityLabel(requested: "auto") == "Best (720p60)")
+    #expect(value.qualityLabel(requested: "1080p60") == "1080p60")
+    let old = try JSONCoding.decoder().decode(PlaybackSession.self, from: Data(#"{"session_id":"s1","hls_url":"https://cdn.example/a.m3u8","qualities":["auto","1080p60"]}"#.utf8))
+    #expect(old.qualityLabel(requested: "auto") == "Best")
+}

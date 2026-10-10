@@ -45,7 +45,12 @@ public struct PlaybackRequest: Codable, Sendable {
     public struct Preferences: Codable, Sendable { public var lowLatency: Bool; public init(lowLatency: Bool = true) { self.lowLatency = lowLatency } }
 }
 public struct PlaybackSession: Codable, Sendable {
-    public var sessionId: String; public var hlsUrl: URL; public var qualities: [String]; public var expiresAt: Date?; public var title: String?; public var playerCapabilities: [String]?; public var filteringStatus: String?; public var state: String?
+    public var sessionId: String; public var hlsUrl: URL; public var qualities: [String]; public var expiresAt: Date?; public var title: String?; public var playerCapabilities: [String]?; public var filteringStatus: String?; public var state: String?; public var selectedQuality: String?
+    public func qualityLabel(requested: String) -> String {
+        guard requested == "auto" else { return requested }
+        guard let selectedQuality, !selectedQuality.isEmpty else { return "Best" }
+        return "Best (\(selectedQuality))"
+    }
 }
 public enum DownloadState: String, Codable, Sendable { case queued, preparing, ready, transferring, paused, completed, failed, cancelled }
 public struct DownloadJob: Codable, Identifiable, Sendable {

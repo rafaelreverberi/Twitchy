@@ -81,10 +81,10 @@ struct SettingsView: View {
                 Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
                 Section("Playback") {
                     Picker("Preferred quality", selection: $personal.data.preferences.preferredQuality) {
-                        Text("Auto").tag("auto")
+                        Text("Best").tag("auto")
                         ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { Text($0).tag($0) }
                     }
-                    Text("Additional qualities appear after your source resolves a stream.").font(.caption).foregroundStyle(.secondary)
+                    Text("Best lets your source select the highest available quality. Additional qualities appear after a stream starts.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Autoplay when opening a channel", isOn: $personal.data.preferences.autoplay)
                     Toggle("Picture in Picture", isOn: $personal.data.preferences.pictureInPicture)
                     Toggle("Retry playback after an interruption", isOn: $personal.data.preferences.retryPlayback)

@@ -14,6 +14,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     public private(set) var session: PlaybackSession?
     public private(set) var error: String?
     public private(set) var quality = "auto"
+    public var qualityLabel: String { session?.qualityLabel(requested: quality) ?? (quality == "auto" ? "Best" : quality) }
     public var pictureInPictureActive = false
     private var client: StreamingSourceClient?
     private var request: PlaybackRequest?
