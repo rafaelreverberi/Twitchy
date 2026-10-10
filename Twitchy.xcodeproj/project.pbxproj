@@ -57,6 +57,11 @@
 		EB2C5ECE9F5CFEC1DFC0A74C /* TwitchyDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = EF8A09CD240709AF17F92E4A /* TwitchyDesignSystem */; };
 		F59CAA3FD062F000D08CBF90 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34ECC617628886598EF76F0 /* SettingsView.swift */; };
 		FED17A082F9E56B087CC0FEF /* TwitchyChat in Frameworks */ = {isa = PBXBuildFile; productRef = 50BC8A0A6F6D8A5A82040285 /* TwitchyChat */; };
+		BDA59F539CAF0C419ADDB446 /* MobilePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = E37F57885BC6E5AC96D682E0 /* MobilePlayback.swift */; };
+		C12EED47D7A48F6BD9259FA6 /* MobileChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058CC15BE16E69B85DCF1B36 /* MobileChannelView.swift */; };
+		B7B01AE6752CE128C1955D53 /* MobileWatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E03E4B5CD142BADEFA34EBC /* MobileWatchView.swift */; };
+		D5ED59A8525FE2A8A9DFAE35 /* MobileChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2BB4ABC445664D126A08BED /* MobileChatView.swift */; };
+		80B933CCCE836BB935A5BFF6 /* MobileFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72FC6FB23AD4EEA8B06FD86 /* MobileFixtures.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +99,11 @@
 		E6CC2C613597595A73B530E3 /* TwitchyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TwitchyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA280CB5BCFA86DA6ABB997D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F34ECC617628886598EF76F0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E37F57885BC6E5AC96D682E0 /* MobilePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePlayback.swift; sourceTree = "<group>"; };
+		058CC15BE16E69B85DCF1B36 /* MobileChannelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChannelView.swift; sourceTree = "<group>"; };
+		3E03E4B5CD142BADEFA34EBC /* MobileWatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWatchView.swift; sourceTree = "<group>"; };
+		A2BB4ABC445664D126A08BED /* MobileChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatView.swift; sourceTree = "<group>"; };
+		F72FC6FB23AD4EEA8B06FD86 /* MobileFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFixtures.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -185,6 +195,11 @@
 		996C2D5C04FF2D9CC8B6A6B3 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				E37F57885BC6E5AC96D682E0 /* MobilePlayback.swift */,
+				058CC15BE16E69B85DCF1B36 /* MobileChannelView.swift */,
+				3E03E4B5CD142BADEFA34EBC /* MobileWatchView.swift */,
+				A2BB4ABC445664D126A08BED /* MobileChatView.swift */,
+				F72FC6FB23AD4EEA8B06FD86 /* MobileFixtures.swift */,
 				EA280CB5BCFA86DA6ABB997D /* AppModel.swift */,
 				9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */,
 				D2B77DDFAC1E7C30F0B03063 /* DownloadsView.swift */,
@@ -412,6 +427,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BDA59F539CAF0C419ADDB446 /* MobilePlayback.swift in Sources */,
+				C12EED47D7A48F6BD9259FA6 /* MobileChannelView.swift in Sources */,
+				B7B01AE6752CE128C1955D53 /* MobileWatchView.swift in Sources */,
+				D5ED59A8525FE2A8A9DFAE35 /* MobileChatView.swift in Sources */,
+				80B933CCCE836BB935A5BFF6 /* MobileFixtures.swift in Sources */,
 				B9588E04E6E0654619E02A09 /* AppModel.swift in Sources */,
 				D024EC6FBE23090EA668639B /* ChannelDetail.swift in Sources */,
 				D5CA35EC63395A312D89BF9F /* DownloadsView.swift in Sources */,

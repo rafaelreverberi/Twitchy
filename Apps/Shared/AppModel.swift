@@ -5,17 +5,30 @@ import TwitchyAuth
 import TwitchySources
 import TwitchyPlayback
 import TwitchyChat
-#if os(macOS)
 import AVKit
-#endif
 
 @MainActor @Observable final class AppModel {
     let auth = TwitchAuthManager()
     let sources = StreamingSourceManager()
+    #if DEBUG && os(iOS) && targetEnvironment(simulator)
+    let personal = PersonalStore(url: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("Twitchy-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
+    #else
     let personal = PersonalStore()
+    #endif
     let playback = PlaybackController()
     let chat = ChatController()
     let downloads = DownloadManager()
+    #if os(iOS)
+    var isMobileFixture: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        MobileFixtures.enabled
+        #else
+        false
+        #endif
+    }
+    var startupComplete = false
+    @ObservationIgnored lazy var mobile = MobilePlaybackCoordinator(model: self)
+    #endif
     @ObservationIgnored lazy var sync = AppDataSync(personal: personal, sources: sources, cloud: CloudSyncStore(transport: PrivateCloudTransport.isConfigured ? PrivateCloudTransport() : nil))
     @ObservationIgnored private var syncStarted = false
     @ObservationIgnored private var applyingOAuthSettings = false
@@ -140,6 +153,22 @@ import AVKit
     }
     var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async {
+        #if os(iOS)
+        defer { startupComplete = true }
+        #endif
+        #if DEBUG && os(iOS) && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" {
+            personal.data.onboardingComplete = true
+            personal.data.preferences.autoplay = true
+            personal.data.preferences.showChat = true
+            personal.data.preferences.pictureInPicture = true
+            let scenario = ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_SCENARIO"]
+            if ProcessInfo.processInfo.environment["TWITCHY_UI_SEARCH_FIXTURE"] != "1" {
+                selectedChannel = .init(login: scenario.map { "fixture-" + $0 } ?? "fixture", name: "Playback test")
+            }
+            return
+        }
+        #endif
         if !syncStarted {
             syncStarted = true
             if personal.data.oauthSettings == nil { saveOAuthSettings() }
@@ -209,18 +238,36 @@ import AVKit
     }
     func open(login: String, name: String, id: String? = nil) { selectedChannel = .init(login: login, name: name, broadcasterID: id) }
     func play(_ selection: ChannelSelection, contentType: String = "live", contentID: String? = nil) async {
+        #if os(iOS)
+        guard !Task.isCancelled else { return }
+        #endif
         do {
             sampleViewing()
-            let client = try sources.client()
+            let client: StreamingSourceClient
+            #if DEBUG && os(iOS) && targetEnvironment(simulator)
+            if ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" {
+                client = try StreamingSourceClient(source: .init(name: "Local fixture", baseURL: URL(string: "http://localhost:8181")!, allowLocalHTTP: true))
+            } else { client = try sources.client() }
+            #else
+            client = try sources.client()
+            #endif
             viewing = nil; viewingLogin = selection.login; wasPlaying = false; viewingTick = ProcessInfo.processInfo.systemUptime
             await playback.start(client: client, request: .init(contentType: contentType, channelLogin: contentType == "live" ? selection.login : nil, contentId: contentID, requestedQuality: personal.data.preferences.preferredQuality))
+            #if os(iOS)
+            guard !Task.isCancelled else { return }
+            #endif
             if playback.session != nil {
                 personal.watched(.init(login: selection.login, title: selection.name, contentType: contentType, contentID: contentID))
                 if viewing == nil { viewing = WatchSession(login: selection.login) }
                 viewingTick = ProcessInfo.processInfo.systemUptime
                 wasPlaying = playback.player.timeControlStatus == .playing
             }
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            #if os(iOS)
+            guard !Task.isCancelled else { return }
+            #endif
+            self.error = error.localizedDescription
+        }
     }
 }
 struct ChannelSelection: Identifiable { let id = UUID(); var login: String; var name: String; var broadcasterID: String?; var contentType: String? = nil; var contentID: String? = nil; var resumePosition: Double = 0; var returnToPlayback = false }
@@ -232,4 +279,8 @@ struct DesktopNowPlaying: Identifiable {
     var title: String
     var thumbnail: URL?
 }
+#endif
+
+#if os(iOS)
+extension ChannelSelection: Hashable {}
 #endif
