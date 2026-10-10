@@ -14,7 +14,7 @@ func recordedClientDownloadAndOfflinePlayback() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let manager = DownloadManager(directory: directory)
-    await manager.enqueue(client: client, type: "clip", contentID: "EndearingHonestTriangleStrawBeary-WVupXff47gjWlcJQ", quality: "360p30")
+    await manager.enqueue(client: client, type: "clip", contentID: ProcessInfo.processInfo.environment["TWITCHY_RECORDED_CLIP_ID"] ?? "EndearingHonestTriangleStrawBeary-WVupXff47gjWlcJQ", quality: ProcessInfo.processInfo.environment["TWITCHY_RECORDED_QUALITY"] ?? "360p30")
     for _ in 0..<120 { if let status = manager.items.first?.job.status, status == .completed || status == .failed { break }; try await Task.sleep(for: .seconds(1)) }
     let item = try #require(manager.items.first)
     #expect(item.job.status == .completed)
