@@ -36,8 +36,8 @@ struct ChannelDetail: View {
                     if let error = model.error { Notice(error) }
                     if let session = model.playback.session {
                         HStack {
-                            Menu("Quality: " + model.playback.quality) {
-                                Button("Auto") { Task { await model.playback.changeQuality("auto") } }
+                            Menu("Quality: " + model.playback.qualityLabel) {
+                                Button("Best") { Task { await model.playback.changeQuality("auto") } }
                                 ForEach(session.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
                             }
                             Button(model.playback.player.isMuted ? "Unmute" : "Mute") { model.playback.player.isMuted.toggle() }
