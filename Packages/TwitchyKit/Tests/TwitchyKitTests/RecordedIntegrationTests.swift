@@ -28,4 +28,17 @@ func recordedClientDownloadAndOfflinePlayback() async throws {
     try await client.cancelDownload(item.job.id)
     try restored.delete(item.id)
     #expect(restored.items.isEmpty)
+    // A restored failed transfer may outlive the source's metadata job TTL.
+    var expired = item
+    expired.localFilename = nil
+    expired.job.status = .failed
+    expired.job.id = "expired-" + UUID().uuidString
+    try JSONEncoder().encode([expired]).write(to: directory.appendingPathComponent("index.json"))
+    let retried = DownloadManager(directory: directory)
+    retried.resume(expired.id, client: client)
+    for _ in 0..<120 { if let status = retried.items.first?.job.status, status == .completed { break }; try await Task.sleep(for: .seconds(1)) }
+    let retryItem = try #require(retried.items.first)
+    #expect(retryItem.job.status == .completed && retryItem.job.id != expired.job.id)
+    try await client.cancelDownload(retryItem.job.id)
+    try retried.delete(retryItem.id)
 }
