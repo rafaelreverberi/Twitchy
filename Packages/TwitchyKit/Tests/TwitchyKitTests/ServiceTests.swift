@@ -315,3 +315,16 @@ actor RefreshGate: HTTPTransport {
     #expect(manager.session == nil)
     #expect(manager.status == "Not connected")
 }
+
+@Test func playbackCreationHasPrerollBudgetWithoutSlowingDiscovery() async throws {
+    let transport = FixtureTransport([capabilities, "{\"session_id\":\"session\",\"hls_url\":\"https://source.example/media/master.m3u8\",\"qualities\":[\"auto\",\"720p60\"]}"])
+    let client = try StreamingSourceClient(source: .init(name: "Source", baseURL: URL(string: "https://source.example")!), transport: transport)
+    _ = try await client.createSession(.init(channelLogin: "alice", requestedQuality: "720p60"))
+    let requests = await transport.requests
+    #expect(requests.count == 2)
+    #expect(requests[0].timeoutInterval == 20)
+    #expect(requests[1].timeoutInterval == 110)
+    #expect(requests[1].httpMethod == "POST")
+    let body = try #require(requests[1].httpBody)
+    #expect(String(decoding: body, as: UTF8.self).contains("720p60"))
+}

@@ -37,7 +37,9 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         }
     }
     public func start(client: StreamingSourceClient, request: PlaybackRequest) async {
-        await stop(); let current = UUID(); generation = current
+        let current = UUID()
+        await reset(nextState: .loading, generationID: current)
+        guard generation == current, !Task.isCancelled else { return }
         self.client = client; self.request = request; state = .loading; error = nil
         do {
             let session = try await client.createSession(request)
@@ -72,13 +74,14 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         if request.contentType != "live", seconds.isFinite, seconds > 0 { await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) }
     }
     public func retry() async { guard let client, let request else { return }; await start(client: client, request: request) }
-    public func stop() async {
-        generation = UUID(); pictureInPictureActive = false
+    public func stop() async { await reset(nextState: .idle, generationID: UUID()) }
+    private func reset(nextState: PlayerState, generationID: UUID) async {
+        generation = generationID; pictureInPictureActive = false
         #if os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
         itemObservation = nil; player.pause(); player.replaceCurrentItem(with: nil)
-        let old = session; let oldClient = client; session = nil; state = .idle; client = nil; request = nil
+        let old = session; let oldClient = client; session = nil; state = nextState; error = nil; client = nil; request = nil
         #if os(iOS) || os(tvOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif

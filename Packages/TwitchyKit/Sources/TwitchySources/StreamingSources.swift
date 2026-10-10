@@ -58,14 +58,14 @@ public struct StreamingSourceClient: Sendable {
     public let source: StreamingSource
     private let authentication: SourceAuthentication
     private let http: HTTPClient
-    public init(source: StreamingSource, authentication: SourceAuthentication = .none, transport: any HTTPTransport = NetworkTransport()) throws {
+    public init(source: StreamingSource, authentication: SourceAuthentication = .none, transport: any HTTPTransport = NetworkTransport(requestTimeout: 110, resourceTimeout: 120)) throws {
         _ = try SourceURL.validate(source.baseURL.absoluteString, allowLocalHTTP: source.allowLocalHTTP)
         self.source = source; self.authentication = authentication; http = HTTPClient(transport: transport)
     }
     private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
         guard source.enabled else { throw ClientError.noSource }
         let url = source.baseURL.appendingPathComponent("v1").appendingPathComponent(path)
-        var r = URLRequest(url: url); r.httpMethod = method; r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Accept")
+        var r = URLRequest(url: url); r.timeoutInterval = (method == "POST" && path == "playback/sessions") ? 110 : 20; r.httpMethod = method; r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Accept")
         if body != nil { r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         if case .bearer(let token) = authentication { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         return r
