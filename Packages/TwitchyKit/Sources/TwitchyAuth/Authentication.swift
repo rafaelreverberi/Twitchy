@@ -54,6 +54,9 @@ public struct OAuthAttempt: Sendable {
     private var browser: ASWebAuthenticationSession?
     private var validationTask: Task<Void, Never>?
     private var deviceTask: Task<Void, Never>?
+    private var validationOperation: Task<Void, Error>?
+    private var validationID = UUID()
+    public var isSigningIn: Bool { status == "Signing in" || deviceCode != nil }
     public init(secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.twitch"), transport: any HTTPTransport = NetworkTransport()) { self.secrets = secrets; http = HTTPClient(transport: transport); super.init() }
     public func restore() async {
         let current = generation
@@ -62,6 +65,21 @@ public struct OAuthAttempt: Sendable {
         } catch { if generation == current { self.error = error.localizedDescription; status = "Sign-in needs attention" } }
     }
     public func validate() async throws {
+        if let operation = validationOperation { return try await operation.value }
+        let id = UUID(); validationID = id
+        let operation = Task { try await self.validateStoredSession() }
+        validationOperation = operation
+        defer { if validationID == id { validationOperation = nil } }
+        do { try await operation.value }
+        catch {
+            if validationID == id, !(error is CancellationError) {
+                self.error = error.localizedDescription
+                status = session == nil ? "Sign in again" : "Connection needs attention"
+            }
+            throw error
+        }
+    }
+    private func validateStoredSession(allowRefresh: Bool = true) async throws {
         guard let stored = session else { return }
         let current = generation
         var r = URLRequest(url: URL(string: "https://id.twitch.tv/oauth2/validate")!); r.setValue("OAuth \(stored.accessToken)", forHTTPHeaderField: "Authorization")
@@ -70,10 +88,13 @@ public struct OAuthAttempt: Sendable {
             guard v.clientId == stored.clientID, v.userId == stored.userID, v.expiresIn > 0 else { throw ClientError.unauthorized }
             guard generation == current, session?.accessToken == stored.accessToken else { throw CancellationError() }
             var updated = stored; updated.expiresAt = Date().addingTimeInterval(Double(v.expiresIn)); updated.scopes = v.scopes
-            try save(updated); status = "Connected"; if validationTask == nil { startValidation() }
+            try save(updated); status = "Connected"; error = nil; if validationTask == nil { startValidation() }
         } catch ClientError.unauthorized {
             guard generation == current, session?.accessToken == stored.accessToken else { throw CancellationError() }
-            if stored.refreshToken != nil { try await refresh(stored) } else { try secrets.delete("session"); session = nil; status = "Sign in again"; throw ClientError.unauthorized }
+            if stored.refreshToken != nil {
+                guard allowRefresh else { throw ClientError.unauthorized }
+                try await refresh(stored)
+            } else { try secrets.delete("session"); session = nil; status = "Sign in again"; throw ClientError.message("Your previous sign-in could not renew itself. Sign in once to enable automatic renewal.") }
         }
     }
     private func refresh(_ stored: AuthSession) async throws {
@@ -81,9 +102,17 @@ public struct OAuthAttempt: Sendable {
         guard let refresh = stored.refreshToken else { throw ClientError.unauthorized }
         do {
             let token = try await tokenResponse(["client_id": stored.clientID, "grant_type": "refresh_token", "refresh_token": refresh])
-            try await establish(access: token.accessToken, refresh: token.refreshToken, clientID: stored.clientID, generation: current)
+            guard generation == current, session?.accessToken == stored.accessToken else { throw CancellationError() }
+            // Public refresh tokens are single-use. Persist the replacement before any more network calls.
+            var rotated = stored
+            rotated.accessToken = token.accessToken; rotated.refreshToken = token.refreshToken ?? refresh
+            rotated.expiresAt = .distantPast // It must be validated before Helix can use it.
+            try save(rotated)
+            try await validateStoredSession(allowRefresh: false)
         } catch {
-            if generation == current, case ClientError.server(400) = error { try secrets.delete("session"); session = nil; status = "Sign in again" }
+            if generation == current, case OAuthFailure.invalidRefresh = error {
+                try secrets.delete("session"); session = nil; status = "Sign in again"
+            }
             throw error
         }
     }
@@ -94,7 +123,7 @@ public struct OAuthAttempt: Sendable {
         guard v.clientId == clientID, let userID = v.userId, let login = v.login, v.expiresIn > 0 else { throw ClientError.unauthorized }
         guard generation == current else { throw CancellationError() }
         try save(.init(accessToken: access, refreshToken: refresh, clientID: clientID, userID: userID, login: login, scopes: v.scopes, expiresAt: Date().addingTimeInterval(Double(v.expiresIn))))
-        status = "Connected"; error = nil; startValidation()
+        status = "Connected"; error = nil; if validationTask == nil { startValidation() }
     }
     private func startValidation() {
         validationTask?.cancel()
@@ -107,9 +136,13 @@ public struct OAuthAttempt: Sendable {
         }
     }
     public func login(configuration: OAuthConfiguration, chat: Bool = false) async {
+        await startDeviceLogin(clientID: configuration.deviceClientID, chat: chat)
+    }
+    public func loginWithBrowser(configuration: OAuthConfiguration, chat: Bool = false) async {
         #if !os(tvOS)
         let current = UUID(); generation = current
         browser?.cancel(); deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
+        cancelValidationOperation()
         do {
             let attempt = try OAuthAttempt(configuration: configuration, scopes: ["user:read:follows"] + (chat ? ["user:read:chat", "user:write:chat"] : []))
             status = "Signing in"
@@ -117,7 +150,7 @@ public struct OAuthAttempt: Sendable {
                 browser = ASWebAuthenticationSession(url: attempt.url, callbackURLScheme: configuration.callbackURI.scheme) { url, error in
                     if let url { continuation.resume(returning: url) } else { continuation.resume(throwing: error ?? ClientError.unauthorized) }
                 }
-                browser?.presentationContextProvider = self; browser?.prefersEphemeralWebBrowserSession = true
+                browser?.presentationContextProvider = self; browser?.prefersEphemeralWebBrowserSession = false
                 if browser?.start() != true { continuation.resume(throwing: ClientError.message("Could not open the system sign-in window.")) }
             }
             try await establish(access: attempt.token(from: callback), refresh: nil, clientID: configuration.clientID, generation: current); browser = nil
@@ -134,17 +167,53 @@ public struct OAuthAttempt: Sendable {
         r.httpBody = values.sorted { $0.key < $1.key }.map { "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }.joined(separator: "&").data(using: .utf8)
         r.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type"); return r
     }
-    private func tokenResponse(_ values: [String: String]) async throws -> TokenResponse { try await http.decode(TokenResponse.self, request: formRequest("token", values)) }
+    private enum OAuthFailure: LocalizedError {
+        case invalidRefresh, configuration, rejected
+        var errorDescription: String? {
+            switch self {
+            case .invalidRefresh: "Twitch authorization expired or was revoked. Sign in again."
+            case .configuration: "Automatic sign-in renewal requires a Public Twitch application. Check Client Type in the Twitch Developer Console and the Client ID in Advanced settings."
+            case .rejected: "Twitch could not authorize this request. Check the application configuration and try signing in again."
+            }
+        }
+    }
+    private struct Failure: Decodable { var message: String?; var error: String? }
+    private func oauthFailure(_ result: HTTPResult) -> any Error {
+        let failure = try? JSONDecoder().decode(Failure.self, from: result.data)
+        let reason = (failure?.message ?? failure?.error ?? "").lowercased()
+        if reason.contains("invalid refresh token") || reason == "invalid_grant" { return OAuthFailure.invalidRefresh }
+        if reason.contains("client") { return OAuthFailure.configuration }
+        return result.status == 400 || result.status == 401 ? OAuthFailure.rejected : ClientError.server(result.status)
+    }
+    private func tokenResponse(_ values: [String: String]) async throws -> TokenResponse {
+        let result = try await http.transport.send(formRequest("token", values))
+        guard result.status == 200 else { throw oauthFailure(result) }
+        return try JSONCoding.decoder().decode(TokenResponse.self, from: result.data)
+    }
+    private func cancelValidationOperation() {
+        validationID = UUID(); validationOperation?.cancel(); validationOperation = nil
+        validationTask?.cancel(); validationTask = nil
+    }
+    public func cancelLogin() {
+        generation = UUID(); deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
+        #if !os(tvOS)
+        browser?.cancel(); browser = nil
+        #endif
+        cancelValidationOperation()
+        status = session == nil ? "Not connected" : "Connection needs attention"; error = nil
+    }
     public func startDeviceLogin(clientID: String, chat: Bool = false) async {
         guard !clientID.isEmpty else { error = "Set a public Device Flow Client ID in Settings."; return }
-        deviceTask?.cancel()
+        deviceTask?.cancel(); cancelValidationOperation(); error = nil; status = "Signing in"
         #if !os(tvOS)
         browser?.cancel()
         #endif
         let current = UUID(); generation = current
         do {
             let scopes = (["user:read:follows"] + (chat ? ["user:read:chat", "user:write:chat"] : [])).joined(separator: " ")
-            let code = try await http.decode(DeviceCode.self, request: formRequest("device", ["client_id": clientID, "scopes": scopes])); guard generation == current else { return }; deviceCode = code; status = "Waiting for authorization"
+            let response = try await http.transport.send(formRequest("device", ["client_id": clientID, "scopes": scopes]))
+            guard response.status == 200 else { throw oauthFailure(response) }
+            let code = try JSONCoding.decoder().decode(DeviceCode.self, from: response.data); guard generation == current else { return }; deviceCode = code; status = "Waiting for authorization"
             let deadline = Date().addingTimeInterval(Double(code.expiresIn))
             deviceTask = Task { [weak self] in
                 guard let self else { return }
@@ -157,20 +226,19 @@ public struct OAuthAttempt: Sendable {
                             let token = try JSONCoding.decoder().decode(TokenResponse.self, from: result.data)
                             try await establish(access: token.accessToken, refresh: token.refreshToken, clientID: clientID, generation: current); deviceCode = nil; return
                         }
-                        struct Failure: Decodable { var message: String?; var error: String? }
-                        let f = try JSONDecoder().decode(Failure.self, from: result.data); let reason = f.error ?? f.message ?? ""
+                        let f = try JSONDecoder().decode(Failure.self, from: result.data); let reason = f.message ?? f.error ?? ""
                         if reason == "authorization_pending" { continue }
                         if reason == "slow_down" { interval += 5; continue }
-                        throw ClientError.message("Device authorization failed. Start sign-in again.")
+                        throw oauthFailure(result)
                     }
                     throw ClientError.message("The device code expired. Start sign-in again.")
                 } catch is CancellationError { }
                 catch { if generation == current { self.error = error.localizedDescription; status = "Not connected"; deviceCode = nil } }
             }
-        } catch { self.error = error.localizedDescription }
+        } catch { if generation == current { self.error = error.localizedDescription; status = session == nil ? "Not connected" : "Connection needs attention" } }
     }
     public func logout() async {
-        generation = UUID()
+        generation = UUID(); cancelValidationOperation()
         validationTask?.cancel(); validationTask = nil; deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
         #if !os(tvOS)
         browser?.cancel()

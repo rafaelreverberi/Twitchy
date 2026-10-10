@@ -9,7 +9,7 @@ Twitchy connects **directly to Twitch** for OAuth, Helix metadata and EventSub c
 1. Open `Twitchy.xcodeproj` in Xcode. The project is committed; XcodeGen is optional for maintainers.
 2. Choose `Twitchy-macOS`, `Twitchy-iOS` (iPhone/iPad), or `Twitchy-tvOS`.
 3. For real devices set your signing team. Run the application.
-4. Open Profile → Settings; configure your Twitch Client ID and redirect URI. See [OAuth setup](docs/TWITCH_AUTH.md).
+4. Choose Sign in with Twitch and confirm access in your browser. The bundled Public Client ID supports automatic renewal; custom configuration is under Settings → Advanced. See [OAuth setup](docs/TWITCH_AUTH.md).
 5. Add a compatible source under Profile → Settings → Sources. Test, inspect capabilities, and select it. See [source setup](docs/SOURCES.md).
 
 Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deployment targets: iOS/iPadOS/tvOS 17, macOS 14. No third-party runtime dependencies. [Getting started](docs/GETTING_STARTED.md) contains exact commands and fixture setup.
@@ -24,7 +24,7 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 | Official Helix profile, streams, follows and search | Implemented | Live account testing needs a registered Client ID |
 | Pagination, bounded cache and safe GET backoff | Implemented | Channel/stream/search/category pagination; VOD/clip pages currently first page in UI |
 | System browser OAuth with state validation | Implemented | Must configure a registered callback; no PKCE assumption |
-| Public Device Flow and rotating refresh token | Implemented | Separate Twitch registration; Apple TV runtime not available locally |
+| Public Device Flow and rotating refresh token | Implemented | Default sign-in; bundled Public Client ID; Apple TV runtime not available locally |
 | Device-only Keychain and startup/hourly validation | Implemented | Unit-tested identity/expiry/revocation; real OAuth pending |
 | Multiple sources, editing, disabling, switching, discovery | Implemented | Explicit HTTPS or private local-development HTTP |
 | AVPlayer HLS, native controls, fullscreen, quality, PiP | Implemented | Local generated HLS fixture tested; real source pending |

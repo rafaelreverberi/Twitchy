@@ -217,3 +217,101 @@ actor ValidationGate: HTTPTransport {
     #expect(manager.items.first?.job.status == .cancelled)
     #expect(await transport.requests.isEmpty)
 }
+
+@Test @MainActor func rotatedRefreshSurvivesOfflineValidationAndRestart() async throws {
+    let secrets = MemorySecrets()
+    let old = AuthSession(accessToken: "old", refreshToken: "old-refresh", clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)
+    try secrets.write(JSONEncoder().encode(old), key: "session")
+    let first = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{}", "{\"access_token\":\"new\",\"refresh_token\":\"rotated\"}"], statuses: [401,200]))
+    await first.restore()
+    #expect(first.session?.refreshToken == "rotated")
+    #expect(first.status != "Connected")
+    let second = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{\"client_id\":\"id\",\"user_id\":\"1\",\"login\":\"alice\",\"scopes\":[],\"expires_in\":3600}"]))
+    await second.restore()
+    #expect(second.status == "Connected")
+    #expect(second.session?.accessToken == "new")
+    #expect(second.session?.refreshToken == "rotated")
+}
+@Test @MainActor func configurationErrorDoesNotDestroyRefreshCredentials() async throws {
+    let secrets = MemorySecrets()
+    let old = AuthSession(accessToken: "old", refreshToken: "refresh", clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)
+    try secrets.write(JSONEncoder().encode(old), key: "session")
+    let manager = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{}", "{\"message\":\"invalid client secret\"}"], statuses: [401,400]))
+    await manager.restore()
+    #expect(manager.session?.refreshToken == "refresh")
+    #expect(try secrets.read("session") != nil)
+    #expect(manager.error?.contains("Public Twitch application") == true)
+}
+@Test @MainActor func invalidRefreshClearsCredentialsWithActionableMessage() async throws {
+    let secrets = MemorySecrets()
+    let old = AuthSession(accessToken: "old", refreshToken: "revoked", clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)
+    try secrets.write(JSONEncoder().encode(old), key: "session")
+    let manager = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{}", "{\"error\":\"Bad Request\",\"message\":\"Invalid refresh token\"}"], statuses: [401,400]))
+    await manager.restore()
+    #expect(manager.session == nil)
+    #expect(try secrets.read("session") == nil)
+    #expect(manager.error?.contains("Sign in again") == true)
+}
+actor RefreshGate: HTTPTransport {
+    var tokenCalls = 0
+    var started = false
+    var releaseToken: CheckedContinuation<HTTPResult, Never>?
+    func send(_ request: URLRequest) async throws -> HTTPResult {
+        if request.url?.path == "/oauth2/token" {
+            tokenCalls += 1; started = true
+            return await withCheckedContinuation { releaseToken = $0 }
+        }
+        if request.value(forHTTPHeaderField: "Authorization") == "OAuth old" { return HTTPResult(data: Data(), status: 401) }
+        return HTTPResult(data: Data("{\"client_id\":\"id\",\"user_id\":\"1\",\"login\":\"alice\",\"scopes\":[],\"expires_in\":3600}".utf8), status: 200)
+    }
+    func release() { releaseToken?.resume(returning: HTTPResult(data: Data("{\"access_token\":\"new\",\"refresh_token\":\"rotated\"}".utf8), status: 200)); releaseToken = nil }
+}
+@Test @MainActor func foregroundAndRestoreShareOneRefresh() async throws {
+    let secrets = MemorySecrets()
+    try secrets.write(JSONEncoder().encode(AuthSession(accessToken: "old", refreshToken: "refresh", clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)), key: "session")
+    let transport = RefreshGate(); let manager = TwitchAuthManager(secrets: secrets, transport: transport)
+    let restore = Task { await manager.restore() }
+    while !(await transport.started) { await Task.yield() }
+    let foreground = Task { try await manager.validate() }
+    await Task.yield(); await transport.release()
+    await restore.value; try await foreground.value
+    #expect(await transport.tokenCalls == 1)
+    #expect(manager.status == "Connected")
+}
+
+@Test @MainActor func defaultSignInPollsAndRestoresRefreshableSession() async throws {
+    let secrets = MemorySecrets()
+    let transport = FixtureTransport([
+        "{\"device_code\":\"device-test\",\"user_code\":\"TEST\",\"verification_uri\":\"https://www.twitch.tv/activate?device-code=TEST\",\"expires_in\":60,\"interval\":1}",
+        "{\"message\":\"authorization_pending\"}",
+        "{\"access_token\":\"device-access\",\"refresh_token\":\"device-refresh\"}",
+        "{\"client_id\":\"id\",\"user_id\":\"1\",\"login\":\"alice\",\"scopes\":[\"user:read:follows\"],\"expires_in\":3600}"
+    ], statuses: [200,400,200,200])
+    let manager = TwitchAuthManager(secrets: secrets, transport: transport)
+    await manager.login(configuration: .init(clientID: "legacy", redirectURI: URL(string: "https://example.com")!, deviceClientID: "id"))
+    #expect(manager.deviceCode?.userCode == "TEST")
+    let deadline = Date().addingTimeInterval(5)
+    while manager.status != "Connected", Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    #expect(manager.status == "Connected")
+    #expect(manager.session?.refreshToken == "device-refresh")
+    #expect(manager.deviceCode == nil)
+    let requests = await transport.requests
+    #expect(requests.count == 4)
+    #expect(String(decoding: requests[0].httpBody ?? Data(), as: UTF8.self).contains("client_id=id"))
+    #expect(!String(decoding: requests[0].httpBody ?? Data(), as: UTF8.self).contains("user%3Awrite%3Achat"))
+    let restarted = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{\"client_id\":\"id\",\"user_id\":\"1\",\"login\":\"alice\",\"scopes\":[],\"expires_in\":3500}"]))
+    await restarted.restore()
+    #expect(restarted.status == "Connected")
+    #expect(restarted.session?.refreshToken == "device-refresh")
+}
+@Test @MainActor func cancelDeviceSignInStopsPolling() async throws {
+    let transport = FixtureTransport(["{\"device_code\":\"device-test\",\"user_code\":\"TEST\",\"verification_uri\":\"https://www.twitch.tv/activate\",\"expires_in\":60,\"interval\":1}"])
+    let manager = TwitchAuthManager(secrets: MemorySecrets(), transport: transport)
+    await manager.startDeviceLogin(clientID: "id")
+    manager.cancelLogin()
+    try await Task.sleep(for: .milliseconds(1100))
+    #expect(await transport.requests.count == 1)
+    #expect(manager.deviceCode == nil)
+    #expect(manager.session == nil)
+    #expect(manager.status == "Not connected")
+}

@@ -29,6 +29,7 @@ final class NavigationTests: XCTestCase {
         }
         let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "Twitchy primary navigation"; capture.lifetime = .keepAlways; add(capture)
         activate(app.buttons["settings.open"])
-        XCTAssertTrue(app.textFields["oauth.clientID"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["oauth.signIn"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["oauth.clientID"].exists, "Client configuration should stay in Advanced settings")
     }
 }

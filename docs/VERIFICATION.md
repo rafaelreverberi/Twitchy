@@ -56,3 +56,9 @@ https://rafaelreverberi.github.io/Twitchy/oauth-callback.html
 ```
 
 Browser verification confirmed the callback script executes under its Content-Security-Policy: opening it without an OAuth response displays the expected message to start sign-in from Twitchy. The setup index also renders and shows the exact registration URL. The inline script/style CSP hashes were checked locally. Only the callback and setup index are published by the Pages artifact. The macOS application builds with this callback as its default URI. Actual Twitch consent and return to ASWebAuthenticationSession still require the user's real registered Client ID; hosting verification alone is not a completed account login.
+
+## Persistent sign-in update — 2026-10-10
+
+The owner confirmed that the supplied bundled Client ID is Public. Twitch's live /oauth2/device endpoint accepted it and returned an activation response; no user consent, access tokens, or refresh tokens were obtained in that check. Default sign-in now uses Device Code Flow on all platforms, with one main button and hidden advanced configuration. Mac/iOS open the activation URL in the default browser.
+
+39 service/integration tests pass, including authorization_pending then successful device sign-in, cancellation, session restoration, concurrent foreground/startup refresh, invalid refresh handling, configuration errors preserving credentials, and recovery after offline validation of a rotated refresh token. macOS, iOS Simulator and tvOS Simulator builds pass. The iPhone navigation test passes and asserts that sign-in is visible without Client ID fields. The new Mac account settings were verified in the running app; see screenshots/macos-signin.png. Apple TV still has no installed simulator runtime. Live account consent and automatic refresh with the user's real credentials remain unverified.

@@ -7,7 +7,7 @@ Deployment minimums: iOS/iPadOS/tvOS 17.0, macOS 14.0. Build without distributio
 ./scripts/build.sh
 ```
 
-The app begins with onboarding. Configure OAuth in Profile → Settings and see TWITCH_AUTH.md. Without login the screens remain navigable, but official Helix browsing needs a user token. Without a source, playback shows an actionable setup state. Chat does not use the source.
+The app begins with onboarding. Choose Sign in with Twitch; confirm access on Twitch and return to the app. The bundled Client ID requires a Public registration; see TWITCH_AUTH.md. Custom application configuration is under Profile → Settings → Advanced. Without login the screens remain navigable, but official Helix browsing needs a user token. Without a source, playback shows an actionable setup state. Chat does not use the source.
 
 ## Deterministic mock fixture
 ```sh
