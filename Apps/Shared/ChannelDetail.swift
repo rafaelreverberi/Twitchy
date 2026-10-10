@@ -56,12 +56,16 @@ struct ChannelDetail: View {
                 if broadcasterID == nil { broadcasterID = try await api.users(logins: [selection.login]).data.first?.id }
                 stream = try await api.streams(login: selection.login).data.first
                 if let id = broadcasterID { async let v = api.videos(userID: id); async let c = api.clips(broadcasterID: id); videos = try await v.data; clips = try await c.data }
-                if let type = selection.contentType, let id = selection.contentID {
-                    await model.play(selection, contentType: type, contentID: id)
-                    await model.playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600))
-                } else if model.personal.data.preferences.autoplay { await model.play(selection) }
+
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }
+        }
+        // Playback starts independently of slower video/clip metadata requests.
+        .task(id: selection.id) {
+            if let type = selection.contentType, let id = selection.contentID {
+                await model.play(selection, contentType: type, contentID: id)
+                await model.playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600))
+            } else if model.personal.data.preferences.autoplay { await model.play(selection) }
         }
         .task(id: model.playback.session?.sessionId) {
             while model.playback.session != nil && !Task.isCancelled {
@@ -92,7 +96,7 @@ struct ChannelDetail: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12).fill(.black)
             if model.playback.session != nil { nativePlayer }
-            else { VStack(spacing: 12) { Image(systemName: "play.rectangle").font(.largeTitle).foregroundStyle(TwitchyTheme.accent); Text(model.sources.active == nil ? "A streaming source is required" : "Ready when you are").font(.headline); Text(model.sources.active?.name ?? "Configure a source in Profile → Settings").font(.caption).foregroundStyle(.secondary) } }
+            else { VStack(spacing: 12) { Image(systemName: "play.rectangle").font(.largeTitle).foregroundStyle(TwitchyTheme.accent); Text(model.playback.state == .loading ? "Starting stream…" : model.sources.active == nil ? "A streaming source is required" : "Ready when you are").font(.headline); Text(model.sources.active?.name ?? "Configure a source in Profile → Settings").font(.caption).foregroundStyle(.secondary) } }
             if model.playback.state == .loading || model.playback.state == .buffering { ProgressView().padding().background(.black.opacity(0.7), in: Capsule()) }
             if model.playback.state == .adBreak || model.playback.state == .pausedByServer { Text("Playback paused by your source").padding().background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 10)) }
             if let error = model.playback.error { VStack { Notice(error); Button("Retry playback") { attempt = 0; Task { await model.playback.retry() } } }.padding(20) }

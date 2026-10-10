@@ -32,9 +32,9 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendab
 }
 public final class NetworkTransport: HTTPTransport, @unchecked Sendable {
     private let session: URLSession
-    public init() {
+    public init(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 60) {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 20; config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForRequest = requestTimeout; config.timeoutIntervalForResource = resourceTimeout
         config.httpCookieStorage = nil; config.urlCredentialStorage = nil
         session = URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
     }
