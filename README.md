@@ -8,7 +8,7 @@ Twitchy connects **directly to Twitch** for OAuth, Helix metadata and EventSub c
 ## Run it
 1. Open `Twitchy.xcodeproj` in Xcode. The project is committed; XcodeGen is optional for maintainers.
 2. Choose `Twitchy-macOS`, `Twitchy-iOS` (iPhone/iPad), or `Twitchy-tvOS`.
-3. For real devices set your signing team. Run the application.
+3. For real devices configure your own signing team, unique Bundle IDs and iCloud container. See [self-build setup](docs/SELF_BUILD.md). Run the application.
 4. Choose Sign in with Twitch and confirm access in your browser. The bundled Public Client ID supports automatic renewal; custom configuration is under Settings → Advanced. See [OAuth setup](docs/TWITCH_AUTH.md).
 5. Add a compatible source under Profile → Settings → Sources. Test, inspect capabilities, and select it. See [source setup](docs/SOURCES.md).
 
@@ -20,9 +20,10 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 | Feature | Status | Boundary |
 |---|---|---|
 | Five primary destinations and native adaptive navigation | Implemented | Home, Channels, Search, Downloads, Profile |
+| macOS Home, channel pages and dedicated watching layout | Implemented | Featured live stream, channel banner/about, paginated videos/broadcasts/clips, fixed chat column, theater mode, native sidebar and persistent Now Playing mini-player; [details](docs/MACOS_INTERFACE.md) |
 | Dark design system, original icon, onboarding | Implemented | Real captures below; no fake stream data |
 | Official Helix profile, streams, follows and search | Implemented | Live account testing needs a registered Client ID |
-| Pagination, bounded cache and safe GET backoff | Implemented | Channel/stream/search/category pagination; VOD/clip pages currently first page in UI |
+| Pagination, bounded cache and safe GET backoff | Implemented | Channel/stream/search/category pagination; macOS channel libraries also paginate VODs, broadcasts and clips |
 | System browser OAuth with state validation | Implemented | Must configure a registered callback; no PKCE assumption |
 | Public Device Flow and rotating refresh token | Implemented | Default sign-in; bundled Public Client ID; Apple TV runtime not available locally |
 | Device-only Keychain and startup/hourly validation | Implemented | Unit-tested identity/expiry/revocation; real OAuth pending |
@@ -34,10 +35,11 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 | Download pause/resume, background transfers, configurable location/concurrency | Planned | Foreground transfers only; retries restart transfers |
 | Favorites, history, recent searches, preferences | Implemented | Local atomic JSON persistence |
 | VOD resume position / Continue Watching | Implemented | Bounded local history; playback position stored every ten seconds and on dismissal |
-| Recommended streams / search suggestions | Unsupported | No documented personalized recommendation or suggestion endpoint used |
+| Recommended live streams | Implemented | Local ranking based on actual viewing duration and sessions; current live status comes from Helix. No Twitch personalized recommendation endpoint is used |
+| Search suggestions | Unsupported | No undocumented suggestion endpoint used |
 | Clips/VOD global free-text search and follow mutation | Unsupported | Channel-scoped metadata and official Twitch follow link |
 | Emote/subscription metadata APIs | Partially implemented | Typed endpoints; subscription UI/additional scope opt-in planned |
-| Optional CloudKit sync | Planned | Conflict strategy documented; no iCloud dependency or active sync |
+| iCloud sync | Implemented; own provisioning required | Sources + credentials, preferences, favorites, searches and history; encrypted private CloudKit records. See [setup](docs/ICLOUD_SYNC.md). |
 | Dedicated macOS chat window / resizable iPad divider | Planned | Responsive side-by-side layout is implemented |
 | tvOS navigation and device sign-in | Partially implemented | Builds against tvOS SDK; remote interaction not live tested |
 | Server acquisition / ad filtering | Unsupported in client | Separate backend responsibility, subject to Twitch policies |
@@ -65,6 +67,8 @@ Real macOS captures (logged out; no claim of real Twitch streaming):
 
 ## Contribute and distribute
 [Contributing](CONTRIBUTING.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) · [Server API OpenAPI](docs/SERVER_API.json)
+
+This repository distributes source code for users to build themselves; no binary release is provided for this update. [Self-build setup](docs/SELF_BUILD.md) covers signing, CloudKit and Twitch configuration.
 
 Original code is [MIT licensed](LICENSE). The license does not confer Twitch content, trademark or distribution rights. Review applicable Twitch API, player and advertising requirements before public distribution; implementation is not approval.
 

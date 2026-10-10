@@ -17,7 +17,71 @@ struct ChannelDetail: View {
     @State private var downloadNotice: String?
     @State private var fullscreen = false
     @State private var attempt = 0
+    #if os(macOS)
+    @State private var watching = false
+    @State private var theater = false
+    @State private var profile: TwitchUser?
+    @State private var channelInfo: ChannelInfo?
+    @State private var library = "Recent videos"
+    @State private var archives: [Video] = []
+    @State private var videoCursor: String?
+    @State private var archiveCursor: String?
+    @State private var clipCursor: String?
+    @State private var metadataLoading = true
+    @State private var libraryLoading = false
+    @State private var playingTitle: String?
+    #endif
     var body: some View {
+        Group {
+            #if os(macOS)
+            macContent
+            #else
+            legacyContent
+            #endif
+        }
+        .task { await loadMetadata() }
+        .task(id: selection.id) {
+            #if os(macOS)
+            if selection.returnToPlayback, let active = model.nowPlaying, active.selection.id == selection.id {
+                watching = true; playingTitle = active.title
+            } else if let type = selection.contentType, let id = selection.contentID {
+                watching = true
+                model.startDesktopPlayback(selection, type: type, contentID: id)
+            }
+            #else
+            if let type = selection.contentType, let id = selection.contentID {
+                await model.play(selection, contentType: type, contentID: id)
+                await model.playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600))
+            } else if model.personal.data.preferences.autoplay { await model.play(selection) }
+            #endif
+        }
+        #if !os(macOS)
+        .task(id: model.playback.session?.sessionId) {
+            while model.playback.session != nil && !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); savePosition() } catch { return }
+            }
+        }
+        #endif
+        .onDisappear {
+            savePosition(); model.chat.disconnect()
+            #if !os(macOS)
+            if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } }
+            #endif
+        }
+        #if !os(macOS)
+        .onChange(of: model.playback.state) { _, state in
+            if state == .failed, model.personal.data.preferences.retryPlayback, attempt < 2 { attempt += 1; Task { try? await Task.sleep(for: .seconds(2 * attempt)); guard !Task.isCancelled else { return }; await model.playback.retry() } }
+        }
+        #endif
+        .sheet(isPresented: $fullscreen) {
+            #if os(macOS)
+            NativePlayer(player: model.playback.player, pictureInPicture: false) { _ in }.frame(minWidth: 800, minHeight: 450)
+            #else
+            nativePlayer.frame(minWidth: 300, minHeight: 240)
+            #endif
+        }
+    }
+    private var legacyContent: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -51,38 +115,36 @@ struct ChannelDetail: View {
                 }.padding(24)
             }.navigationTitle(selection.name).toolbar { ToolbarItem { Button("Done") { dismiss() } } }
         }
-        .task {
-            if let id = model.sources.activeID { await model.sources.test(id) }
-            broadcasterID = selection.broadcasterID
-            do {
-                guard let api = model.api else { return }
-                if broadcasterID == nil { broadcasterID = try await api.users(logins: [selection.login]).data.first?.id }
-                stream = try await api.streams(login: selection.login).data.first
-                if let id = broadcasterID { async let v = api.videos(userID: id); async let c = api.clips(broadcasterID: id); videos = try await v.data; clips = try await c.data }
-
-            } catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
-        }
-        // Playback starts independently of slower video/clip metadata requests.
-        .task(id: selection.id) {
-            if let type = selection.contentType, let id = selection.contentID {
-                await model.play(selection, contentType: type, contentID: id)
-                await model.playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600))
-            } else if model.personal.data.preferences.autoplay { await model.play(selection) }
-        }
-        .task(id: model.playback.session?.sessionId) {
-            while model.playback.session != nil && !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); savePosition() } catch { return }
-            }
-        }
-        .onDisappear { savePosition(); model.chat.disconnect(); if !model.playback.pictureInPictureActive { Task { await model.playback.stop() } } }
-        .onChange(of: model.playback.state) { _, state in
-            if state == .failed, model.personal.data.preferences.retryPlayback, attempt < 2 { attempt += 1; Task { try? await Task.sleep(for: .seconds(2 * attempt)); guard !Task.isCancelled else { return }; await model.playback.retry() } }
-        }
-        .sheet(isPresented: $fullscreen) { nativePlayer.frame(minWidth: 300, minHeight: 240) }
+    }
+    private func loadMetadata() async {
+        broadcasterID = selection.broadcasterID
         #if os(macOS)
-        .frame(minWidth: 800, minHeight: 720)
+        defer { metadataLoading = false }
+        #else
+        if let id = model.sources.activeID { await model.sources.test(id) }
         #endif
+        do {
+            guard let api = model.api else { return }
+            #if os(macOS)
+            profile = try await api.users(logins: [selection.login]).data.first
+            broadcasterID = profile?.id ?? broadcasterID
+            #else
+            if broadcasterID == nil { broadcasterID = try await api.users(logins: [selection.login]).data.first?.id }
+            #endif
+            stream = try await api.streams(login: selection.login).data.first
+            if let id = broadcasterID {
+                #if os(macOS)
+                do { channelInfo = try await api.channel(id: id).data.first } catch { self.error = error.localizedDescription }
+                do { let page = try await api.videos(userID: id); videos = page.data; videoCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
+                do { let page = try await api.videos(userID: id, type: "archive"); archives = page.data; archiveCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
+                do { let page = try await api.clips(broadcasterID: id); clips = page.data; clipCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
+                #else
+                async let v = api.videos(userID: id); async let c = api.clips(broadcasterID: id)
+                videos = try await v.data; clips = try await c.data
+                #endif
+            }
+        } catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
     }
     @ViewBuilder private func downloadButton(type: String, id: String) -> some View {
         #if !os(tvOS)
@@ -94,16 +156,24 @@ struct ChannelDetail: View {
         }
         #endif
     }
-    private var nativePlayer: some View {
+    @ViewBuilder private var nativePlayer: some View {
+        #if os(macOS)
+        DesktopNativePlayer(surface: model.desktopPlayerSurface, pictureInPicture: model.personal.data.preferences.pictureInPicture)
+        #else
         NativePlayer(player: model.playback.player, pictureInPicture: model.personal.data.preferences.pictureInPicture) { active in
             model.playback.pictureInPictureActive = active
             if !active, model.selectedChannel == nil { Task { await model.playback.stop() } }
         }
+        #endif
     }
     private func savePosition() {
+        #if os(macOS)
+        model.saveDesktopPosition()
+        #else
         guard let request = model.playback.currentRequest, request.contentType != "live", let id = request.contentId else { return }
         let seconds = model.playback.player.currentTime().seconds
         if seconds.isFinite && seconds > 0 { model.personal.watched(.init(login: selection.login, title: selection.name, position: seconds, contentType: request.contentType, contentID: id)) }
+        #endif
     }
     private var playerArea: some View {
         ZStack {
@@ -157,7 +227,18 @@ struct ChatPanel: View {
     @State private var receivedAt: [String: Date] = [:]
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("Chat").font(.title2.bold()); Spacer(); Text(model.chat.status).font(.caption).foregroundStyle(.secondary) }
+            HStack {
+                #if os(macOS)
+                Label("Stream chat", systemImage: "bubble.left.and.bubble.right").font(.headline)
+                #else
+                Text("Chat").font(.title2.bold())
+                #endif
+                Spacer(); Text(model.chat.status).font(.caption).foregroundStyle(.secondary)
+            }
+            #if os(macOS)
+            Divider()
+            if model.playback.currentRequest?.contentType != "live" { Text("Live channel chat · no replay").font(.caption).foregroundStyle(.secondary) }
+            #endif
             if model.auth.session?.scopes.contains("user:read:chat") != true {
                 Text("Connect with chat permissions to join this channel.").foregroundStyle(.secondary)
                 Button("Authorize chat") { Task { await model.login(chat: true) } }
@@ -166,12 +247,18 @@ struct ChatPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(model.chat.messages) { message in HStack(alignment: .top, spacing: 5) {
+                            ForEach(model.chat.messages) { message in
+                                #if os(macOS)
+                                MacChatMessage(message: message, timestamp: receivedAt[message.id] ?? .now).id(message.id)
+                                #else
+                                HStack(alignment: .top, spacing: 5) {
                                 if model.personal.data.preferences.timestamps { Text((receivedAt[message.id] ?? .now).formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
                                 ForEach(message.badges, id: \.setId) { badge in if let url = model.chat.badgeImages["\(badge.setId)/\(badge.id)"] { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.clear }.frame(width: 18, height: 18).accessibilityLabel(badge.setId) } }
                                 Text(message.chatterUserName).bold().foregroundStyle(chatColor(message.color))
                                 if model.personal.data.preferences.emotes { MessageFragments(message: message) } else { Text(message.message.text) }
-                            }.font(.system(size: model.personal.data.preferences.chatFontSize)).id(message.id) }
+                                }.font(.system(size: model.personal.data.preferences.chatFontSize)).id(message.id)
+                                #endif
+                            }
                         }.padding(.vertical, 8)
                     }
                     #if os(tvOS)
@@ -184,7 +271,11 @@ struct ChatPanel: View {
                         let retained = Set(model.chat.messages.map(\.id)); receivedAt = receivedAt.filter { retained.contains($0.key) }
                         if follow, model.personal.data.preferences.autoscroll, let last = model.chat.messages.last { if reduceMotion || model.personal.data.preferences.reduceMotion { proxy.scrollTo(last.id, anchor: .bottom) } else { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) } } }
                     }
+                    #if os(macOS)
+                    if !follow { Button("Jump to latest") { follow = true; if let last = model.chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } } }
+                    #else
                     Button("Jump to latest") { follow = true; if let last = model.chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    #endif
                 }
                 HStack { TextField("Send a message", text: $text).onSubmit { send() }.accessibilityIdentifier("chat.input"); Button { send() } label: { Image(systemName: "paperplane.fill") }.disabled(text.isEmpty || sending || model.chat.status != "Connected").accessibilityLabel("Send message") }
             }
@@ -206,3 +297,229 @@ struct MessageFragments: View {
 }
 
 #Preview { ChannelDetail(selection: .init(login: "preview", name: "Preview channel")).environment(AppModel()) }
+
+#if os(macOS)
+extension ChannelDetail {
+    private var macContent: some View {
+        GeometryReader { geometry in
+            HStack(alignment: .top, spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if watching { desktopPlayer; desktopIdentity; playerActions }
+                        else { channelHero; channelActions; aboutChannel }
+                        if let error { Notice(error) }
+                        if let error = model.error { Notice(error) }
+                        if let downloadNotice { Notice(downloadNotice) }
+                        if !theater { desktopLibrary }
+                    }.padding(theater ? 16 : 28).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if watching && model.personal.data.preferences.showChat && !theater {
+                    ChatPanel(broadcasterID: broadcasterID)
+                        .frame(width: geometry.size.width > 1100 ? 320 : 280)
+                        .frame(maxHeight: .infinity).padding(.vertical, 20).padding(.trailing, 20)
+                }
+            }
+        }
+        .background(TwitchyTheme.background)
+        .onChange(of: model.nowPlaying?.id) { _, id in if id == nil { watching = false; theater = false } }
+        .navigationTitle(selection.name)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    if watching {
+                        savePosition(); watching = false; theater = false
+                    } else { model.selectedChannel = nil }
+                } label: { Label(watching ? "Channel" : "Back", systemImage: "chevron.left") }
+                .accessibilityIdentifier("channel.back")
+            }
+        }
+    }
+    private var channelHero: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GeometryReader { geometry in
+                ZStack(alignment: .bottomLeading) {
+                    LinearGradient(colors: [TwitchyTheme.accent.opacity(0.65), TwitchyTheme.elevated, TwitchyTheme.background], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    if let stream {
+                        RemoteImage(stream.thumbnail).frame(width: geometry.size.width, height: 210)
+                    } else if let value = profile?.offlineImageUrl, !value.isEmpty, let url = URL(string: value) {
+                        RemoteImage(url).frame(width: geometry.size.width, height: 210)
+                    }
+                    LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom)
+                    HStack { Label(stream == nil ? "OFFLINE" : "NOW LIVE", systemImage: stream == nil ? "moon" : "dot.radiowaves.left.and.right").font(.caption.bold()).tracking(2); Spacer(); Text("twitch.tv/\(selection.login)").font(.caption) }
+                        .foregroundStyle(.white).padding(24)
+                }.clipShape(RoundedRectangle(cornerRadius: 18))
+            }.frame(height: 210)
+            desktopIdentity.padding(.top, 22)
+        }
+    }
+    private var desktopIdentity: some View {
+        HStack(alignment: .top, spacing: 16) {
+            RemoteImage(URL(string: profile?.profileImageUrl ?? ""), symbol: "person.crop.circle")
+                .frame(width: watching ? 62 : 82, height: watching ? 62 : 82).clipShape(Circle())
+                .overlay { Circle().strokeBorder(TwitchyTheme.accent.opacity(0.7), lineWidth: 3) }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Text(profile?.displayName ?? selection.name).font(watching ? .title2.bold() : .largeTitle.bold())
+                    if stream != nil && (!watching || model.playback.currentRequest?.contentType == "live") { MacLiveBadge() }
+                    Spacer()
+                    Button { model.personal.favorite(selection.login) } label: {
+                        Image(systemName: model.personal.data.favorites.contains(selection.login) ? "star.fill" : "star")
+                    }.buttonStyle(.bordered).help("Save channel to your favorites").accessibilityLabel("Toggle favorite")
+                }
+                Text(watching ? (playingTitle ?? stream?.title ?? channelInfo?.title ?? "Stream playback") : (stream?.title ?? channelInfo?.title ?? "Welcome to the channel"))
+                    .font(.headline).lineLimit(2)
+                HStack(spacing: 10) {
+                    let game = stream?.gameName ?? channelInfo?.gameName ?? ""
+                    if !game.isEmpty { Text(game).font(.caption).padding(.horizontal, 10).padding(.vertical, 6).background(TwitchyTheme.elevated, in: Capsule()) }
+                    if let stream, !watching || model.playback.currentRequest?.contentType == "live" { Label("\(stream.viewerCount.formatted()) viewers", systemImage: "person.2").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+        }
+    }
+    private var channelActions: some View {
+        HStack(spacing: 12) {
+            if stream != nil {
+                Button { startWatching() } label: { Label("Watch live", systemImage: "play.fill").padding(.horizontal, 12).padding(.vertical, 5) }
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("channel.watchLive")
+            } else if metadataLoading { ProgressView("Loading channel…") }
+            else { Label("Currently offline", systemImage: "moon").foregroundStyle(.secondary) }
+            Link(destination: channelURL) { Label("Follow on Twitch", systemImage: "heart") }.buttonStyle(.bordered)
+            ShareLink(item: channelURL) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
+            Spacer()
+        }
+    }
+    private var aboutChannel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("About \(profile?.displayName ?? selection.name)").font(.title2.bold())
+            Text(profile?.description.isEmpty == false ? profile!.description : "This channel hasn't added a description yet.")
+                .foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        }.padding(22).frame(maxWidth: .infinity, alignment: .leading).macSurface()
+    }
+    private var channelURL: URL { URL(string: "https://www.twitch.tv/\(selection.login)")! }
+    private var desktopPlayer: some View {
+        VStack(spacing: 0) {
+            playerArea
+            if model.playback.session == nil && model.playback.state != .loading {
+                HStack {
+                    Text(model.sources.active == nil ? "Connect a source to watch this stream." : "Start playback when you're ready.").font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    if model.sources.active == nil {
+                        Button("Configure source") { model.showingSettings = true }.buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Retry") { startWatching(type: model.playback.currentRequest?.contentType ?? selection.contentType ?? "live", id: model.playback.currentRequest?.contentId ?? selection.contentID, title: playingTitle) }.buttonStyle(.borderedProminent)
+                    }
+                }.padding(.top, 14)
+            }
+        }
+    }
+    private var playerActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { playbackButtons; Spacer(); Link("Follow on Twitch", destination: channelURL).buttonStyle(.bordered) }
+            VStack(alignment: .leading, spacing: 12) { HStack { playbackButtons }; Link("Follow on Twitch", destination: channelURL).buttonStyle(.bordered) }
+        }
+    }
+    @ViewBuilder private var playbackButtons: some View {
+        Button {
+            model.personal.data.preferences.showChat.toggle()
+            if theater { theater = false }
+        } label: { Label(model.personal.data.preferences.showChat && !theater ? "Hide chat" : "Open chat", systemImage: "bubble.left.and.bubble.right") }.buttonStyle(.bordered)
+        Button { theater.toggle() } label: { Label(theater ? "Exit theater" : "Theater", systemImage: "rectangle.expand.vertical") }.buttonStyle(.bordered)
+        if let session = model.playback.session {
+            Button { model.playback.toggleMute() } label: { Image(systemName: model.playback.isMuted ? "speaker.slash" : "speaker.wave.2") }.buttonStyle(.bordered).accessibilityLabel(model.playback.isMuted ? "Unmute" : "Mute")
+            Button("Stop stream", systemImage: "stop.fill") { model.stopDesktopPlayback(); watching = false; theater = false }.buttonStyle(.bordered).accessibilityIdentifier("player.stop")
+            Menu(model.playback.qualityLabel) {
+                Button("Best · Auto") { Task { await model.playback.changeQuality("auto") } }
+                ForEach(session.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
+            }.menuStyle(.borderlessButton).fixedSize().padding(8).background(TwitchyTheme.elevated, in: RoundedRectangle(cornerRadius: 8))
+            Button { fullscreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.bordered).accessibilityLabel("Fullscreen")
+        }
+    }
+    private var desktopLibrary: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(watching ? "More from \(selection.name)" : "Channel library").font(.title2.bold())
+                Spacer()
+                if metadataLoading || libraryLoading { ProgressView().controlSize(.small) }
+            }
+            Picker("Channel library", selection: $library) {
+                Text("Recent videos").tag("Recent videos")
+                Text("Past broadcasts").tag("Past broadcasts")
+                Text("Clips").tag("Clips")
+            }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 470).accessibilityIdentifier("channel.library")
+            if library == "Clips" {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 190 : 250))], alignment: .leading, spacing: 22) {
+                    ForEach(clips) { clip in
+                        libraryCard(title: clip.title, thumbnail: clip.thumbnailUrl, badge: "CLIP", detail: clip.broadcasterName, type: "clip", id: clip.id, url: clip.url)
+                    }
+                }
+            } else {
+                let items = library == "Past broadcasts" ? archives : videos
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 190 : 250))], alignment: .leading, spacing: 22) {
+                    ForEach(items) { video in
+                        libraryCard(title: video.title, thumbnail: video.thumbnailUrl, badge: video.duration, detail: videoDetail(video), type: "vod", id: video.id, url: video.url)
+                    }
+                }
+            }
+            if !metadataLoading && (library == "Clips" ? clips.isEmpty : library == "Past broadcasts" ? archives.isEmpty : videos.isEmpty) {
+                EmptyState("No \(library.lowercased()) available", detail: "Published videos and clips will appear here when Twitch makes them available.")
+            }
+            if (library == "Clips" ? clipCursor : library == "Past broadcasts" ? archiveCursor : videoCursor) != nil {
+                Button("Load more") { Task { await moreLibrary() } }.buttonStyle(.bordered).disabled(libraryLoading)
+            }
+        }
+    }
+    private func libraryCard(title: String, thumbnail: String, badge: String, detail: String, type: String, id: String, url: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Button { startWatching(type: type, id: id, title: title) } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    RemoteImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "640").replacingOccurrences(of: "%{height}", with: "360").replacingOccurrences(of: "{width}", with: "640").replacingOccurrences(of: "{height}", with: "360")))
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .overlay(alignment: .bottomLeading) { Text(badge).font(.caption.bold()).foregroundStyle(.white).padding(6).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 5)).padding(10) }
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    Text(title).font(.headline).lineLimit(2).frame(height: 40, alignment: .topLeading)
+                }
+            }.buttonStyle(.plain).accessibilityLabel("Watch \(title)")
+            HStack {
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Menu {
+                    Button("Watch") { startWatching(type: type, id: id, title: title) }
+                    downloadButton(type: type, id: id)
+                    if let url = URL(string: url) { Link("Open on Twitch", destination: url) }
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Options for \(title)")
+            }
+        }
+    }
+    private func videoDetail(_ video: Video) -> String {
+        var parts: [String] = []
+        if let views = video.viewCount { parts.append("\(views.formatted()) views") }
+        if let value = video.createdAt, let date = ISO8601DateFormatter().date(from: value) { parts.append(date.formatted(.relative(presentation: .named))) }
+        return parts.isEmpty ? selection.name : parts.joined(separator: " · ")
+    }
+    private func startWatching(type: String = "live", id: String? = nil, title: String? = nil) {
+        savePosition(); watching = true; playingTitle = title; attempt = 0; model.error = nil
+        if let active = model.nowPlaying, model.playback.session != nil, active.selection.login == selection.login, active.selection.contentType == type, active.selection.contentID == id {
+            playingTitle = active.title
+        } else {
+            model.startDesktopPlayback(selection, type: type, contentID: id, title: title ?? stream?.title, thumbnail: stream?.thumbnail)
+        }
+    }
+    private func moreLibrary() async {
+        guard let api = model.api, let id = broadcasterID else { return }
+        let tab = library; libraryLoading = true; defer { libraryLoading = false }
+        do {
+            if tab == "Clips", let cursor = clipCursor {
+                let page = try await api.clips(broadcasterID: id, after: cursor)
+                let existing = Set(clips.map(\.id)); clips += page.data.filter { !existing.contains($0.id) }; clipCursor = page.pagination?.cursor
+            } else if tab == "Past broadcasts", let cursor = archiveCursor {
+                let page = try await api.videos(userID: id, after: cursor, type: "archive")
+                let existing = Set(archives.map(\.id)); archives += page.data.filter { !existing.contains($0.id) }; archiveCursor = page.pagination?.cursor
+            } else if let cursor = videoCursor {
+                let page = try await api.videos(userID: id, after: cursor)
+                let existing = Set(videos.map(\.id)); videos += page.data.filter { !existing.contains($0.id) }; videoCursor = page.pagination?.cursor
+            }
+        } catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
+    }
+}
+#endif

@@ -12,3 +12,10 @@ xcuserdata/
 *.key
 __pycache__/
 *.pyc
+
+# Signing credentials and device provisioning stay local.
+*.p8
+*.pem
+*.provisionprofile
+*.certSigningRequest
+*.keystore

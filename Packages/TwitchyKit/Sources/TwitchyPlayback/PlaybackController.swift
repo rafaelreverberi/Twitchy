@@ -15,18 +15,23 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     public private(set) var error: String?
     public private(set) var quality = "auto"
     public var qualityLabel: String { session?.qualityLabel(requested: quality) ?? (quality == "auto" ? "Best" : quality) }
+    public private(set) var isPaused = true
+    public private(set) var isMuted = false
     public var pictureInPictureActive = false
     private var client: StreamingSourceClient?
     private var request: PlaybackRequest?
     public var currentRequest: PlaybackRequest? { request }
     private var observation: NSKeyValueObservation?
+    private var muteObservation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
     private var generation = UUID()
     public init() {
         observation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             let value = player.timeControlStatus
             Task { @MainActor [weak self] in
-                guard let self, session != nil else { return }
+                guard let self else { return }
+                isPaused = value == .paused
+                guard session != nil else { return }
                 if value == .playing {
                     state = .playing
                     #if os(iOS)
@@ -36,7 +41,17 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
                 else if value == .waitingToPlayAtSpecifiedRate { state = .buffering }
             }
         }
+        muteObservation = player.observe(\.isMuted, options: [.initial, .new]) { [weak self] player, _ in
+            let muted = player.isMuted
+            Task { @MainActor [weak self] in self?.isMuted = muted }
+        }
     }
+    public func togglePlayPause() {
+        guard session != nil, player.currentItem != nil else { return }
+        if player.timeControlStatus == .paused { player.play(); isPaused = false }
+        else { player.pause(); isPaused = true }
+    }
+    public func toggleMute() { player.isMuted.toggle(); isMuted = player.isMuted }
     public func start(client: StreamingSourceClient, request: PlaybackRequest) async {
         let current = UUID()
         await reset(nextState: .loading, generationID: current)
@@ -81,7 +96,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         #if os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
-        itemObservation = nil; player.pause(); player.replaceCurrentItem(with: nil)
+        itemObservation = nil; isPaused = true; player.pause(); player.replaceCurrentItem(with: nil)
         let old = session; let oldClient = client; session = nil; state = nextState; error = nil; client = nil; request = nil
         #if os(iOS) || os(tvOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
