@@ -44,12 +44,20 @@ func mockDownloadTransferPersistenceAndDelete() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let manager = DownloadManager(directory: directory)
-    await manager.enqueue(client: try fixtureClient(), type: "vod", contentID: "fixture", permission: "fixture-owner")
+    await manager.enqueue(client: try fixtureClient(), type: "vod", contentID: "fixture", permission: "fixture-owner", metadata: .init(title: "Fixture video", channel: "Fixture channel", duration: "0:06"))
     for _ in 0..<40 { if manager.items.first?.job.status == .completed { break }; try await Task.sleep(for: .milliseconds(100)) }
     let item = try #require(manager.items.first)
     #expect(item.job.status == .completed)
     #expect(FileManager.default.fileExists(atPath: try #require(manager.file(for: item)).path))
+    for _ in 0..<40 {
+        if let current = manager.items.first, manager.thumbnailFile(for: current) != nil { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    let withArtwork = try #require(manager.items.first)
+    #expect(manager.thumbnailFile(for: withArtwork) != nil)
     let restored = DownloadManager(directory: directory); #expect(restored.items.first?.job.status == .completed)
+    #expect(restored.items.first?.metadata?.title == "Fixture video")
+    #expect(restored.thumbnailFile(for: withArtwork) != nil)
     try restored.delete(item.id); #expect(restored.items.isEmpty)
 }
 

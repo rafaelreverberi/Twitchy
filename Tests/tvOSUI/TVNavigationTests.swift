@@ -20,10 +20,14 @@ final class TVNavigationTests: XCTestCase {
         XCTAssertTrue(target.hasFocus, "Cannot focus \(target.label)")
     }
     @MainActor func testTelevisionScreens() {
-        for (route, title) in [("onboarding", "Your streams.\nOn the big screen."), ("onboarding-code", "TVTEST42"), ("Home", "Watch now"), ("Channels", "Following"), ("Search", "Search"), ("Library", "Your library"), ("Settings", "Settings"), ("channel", "Northern Lights")] {
+        for (route, title) in [("onboarding", "Your streams.\nOn the big screen."), ("onboarding-code", "TVTEST42"), ("Home", "Watch now"), ("Channels", "Following"), ("Search", "Search"), ("Settings", "Settings"), ("channel", "Northern Lights")] {
             let app = launch(route)
             XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 15), route)
             XCTAssertFalse(app.buttons["Downloads"].exists)
+            XCTAssertFalse(app.buttons["Library"].exists)
+            XCTAssertFalse(app.staticTexts["Favorites"].exists)
+            XCTAssertFalse(app.buttons["Add favorite"].exists)
+            XCTAssertFalse(app.buttons["Remove favorite"].exists)
             capture(route)
             if route == "Settings" { XCTAssertTrue(app.buttons["tv.sync"].exists); XCTAssertTrue(app.buttons["tv.sources"].exists) }
             if route == "Home" {

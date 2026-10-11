@@ -13,7 +13,7 @@ struct MacHomeView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Home").font(.system(size: 34, weight: .bold))
-                        Text("Your favorites. New discoveries. Always something live.").foregroundStyle(.secondary)
+                        Text("Your channels. New discoveries. Always something live.").foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
@@ -31,7 +31,6 @@ struct MacHomeView: View {
                     if model.loading { ProgressView("Updating your lineup…") }
                     if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
-                    if !model.personal.data.favorites.isEmpty { channelRow("Your favorites", logins: model.personal.data.favorites) }
                     let history = model.personal.data.history.filter { $0.contentID != nil && $0.position > 0 }
                     if !history.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
@@ -94,20 +93,7 @@ struct MacHomeView: View {
             }.padding(26).frame(width: 285, alignment: .leading)
         }.macSurface().clipShape(RoundedRectangle(cornerRadius: 18))
     }
-    private func channelRow(_ title: String, logins: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.title2.bold())
-            ScrollView(.horizontal) {
-                HStack(spacing: 12) {
-                    ForEach(logins, id: \.self) { login in
-                        Button { model.open(login: login, name: login) } label: {
-                            Label(login, systemImage: "star.fill").font(.headline).padding(18).macSurface()
-                        }.buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
+
 }
 
 struct MacLiveBadge: View {
@@ -200,52 +186,229 @@ struct MacChatFlow: Layout {
 #if os(macOS)
 import AVKit
 import TwitchyPlayback
+import Observation
 
-/// Retain the native player view and PiP delegate independently of navigation.
-@MainActor final class DesktopPlayerSurface: NSObject, @preconcurrency AVPlayerViewPictureInPictureDelegate {
-    private(set) var view = AVPlayerView()
+/// Keep one video layer and PiP controller alive across channel navigation and fullscreen.
+@MainActor @Observable final class DesktopPlayerSurface: NSObject, @preconcurrency AVPictureInPictureControllerDelegate {
+    let view = DesktopVideoView()
     let playback: PlaybackController
+    private var pip: AVPictureInPictureController?
+    private var pipObservation: NSKeyValueObservation?
+    private var volumeObservation: NSKeyValueObservation?
+    var pipPossible = false
+    var volume: Double = 1
+    var restorePlayback: (() -> Void)?
+
     init(playback: PlaybackController) {
         self.playback = playback
         super.init()
-        view.player = playback.player
-        view.controlsStyle = .inline
-        view.showsFullScreenToggleButton = true
-        view.pictureInPictureDelegate = self
-    }
-    func attach(pictureInPicture: Bool) -> AVPlayerView {
-        // AVKit tears down its PiP controller when an inline view leaves the window.
-        // Recreate the presentation when returning, while retaining the AVPlayer/session.
-        // Keep the original view while PiP is running so navigation cannot dismiss it.
-        if !playback.pictureInPictureActive {
-            view.player = nil
-            view = AVPlayerView()
-            view.player = playback.player
+        view.videoLayer.player = playback.player
+        pip = AVPictureInPictureController(playerLayer: view.videoLayer)
+        pip?.delegate = self
+        pipObservation = pip?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] controller, _ in
+            let possible = controller.isPictureInPicturePossible
+            Task { @MainActor [weak self] in self?.pipPossible = possible }
         }
-        configure(view, pictureInPicture: pictureInPicture)
-        return view
+        volumeObservation = playback.player.observe(\.volume, options: [.initial, .new]) { [weak self] player, _ in
+            let volume = Double(player.volume)
+            Task { @MainActor [weak self] in self?.volume = volume }
+        }
     }
-    func configure(_ view: AVPlayerView, pictureInPicture: Bool) {
-        if view.controlsStyle != .inline { view.controlsStyle = .inline }
-        view.showsFullScreenToggleButton = true
-        if view.pictureInPictureDelegate !== self { view.pictureInPictureDelegate = self }
-        if view.allowsPictureInPicturePlayback != pictureInPicture { view.allowsPictureInPicturePlayback = pictureInPicture }
+    func setVolume(_ value: Double) {
+        volume = value
+        playback.player.volume = Float(value)
+        if value > 0, playback.isMuted { playback.toggleMute() }
     }
-    func playerViewWillStartPicture(inPicture playerView: AVPlayerView) { playback.pictureInPictureActive = true }
-    func playerViewDidStopPicture(inPicture playerView: AVPlayerView) { playback.pictureInPictureActive = false }
-    func playerView(_ playerView: AVPlayerView, failedToStartPictureInPictureWithError error: Error) { playback.pictureInPictureActive = false }
-    func playerViewShouldAutomaticallyDismissAtPicture(inPictureStart playerView: AVPlayerView) -> Bool { false }
+    func togglePiP() {
+        guard let pip else { return }
+        if pip.isPictureInPictureActive { pip.stopPictureInPicture() }
+        else if pip.isPictureInPicturePossible { pip.startPictureInPicture() }
+    }
+    func stopPiP() { pip?.stopPictureInPicture() }
+    func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) { playback.pictureInPictureActive = true }
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) { playback.pictureInPictureActive = false }
+    func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) { playback.pictureInPictureActive = false }
+    func pictureInPictureController(_ controller: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        restorePlayback?()
+        completionHandler(true)
+    }
 }
+
+@MainActor final class DesktopVideoView: NSView {
+    let videoLayer = AVPlayerLayer()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        videoLayer.videoGravity = .resizeAspect
+        layer?.backgroundColor = NSColor.black.cgColor
+        layer?.addSublayer(videoLayer)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        videoLayer.frame = bounds
+        CATransaction.commit()
+    }
+}
+
 struct DesktopNativePlayer: NSViewRepresentable {
     let surface: DesktopPlayerSurface
-    var pictureInPicture: Bool
-    func makeNSView(context: Context) -> AVPlayerView {
-        surface.attach(pictureInPicture: pictureInPicture)
+    func makeNSView(context: Context) -> DesktopVideoView { surface.view }
+    func updateNSView(_ view: DesktopVideoView, context: Context) { }
+}
+
+struct DesktopAirPlayPicker: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.player = player
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.white, for: .normal)
+        view.setAccessibilityLabel("AirPlay")
+        return view
     }
-    func updateNSView(_ view: AVPlayerView, context: Context) {
-        surface.configure(view, pictureInPicture: pictureInPicture)
+    func updateNSView(_ view: AVRoutePickerView, context: Context) { view.player = player }
+}
+
+struct DesktopWatchPlayer: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Binding var theater: Bool
+    @State private var controlsVisible = true
+    @State private var controlsHovered = false
+    @State private var lastMovement = Date.now
+    var fullscreenPresentation = false
+    private var showControls: Bool { controlsVisible || model.playback.isPaused || model.playback.state != .playing }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if model.desktopFullscreen == fullscreenPresentation {
+                DesktopNativePlayer(surface: model.desktopPlayerSurface)
+                    .accessibilityIdentifier("player.video")
+            }
+            if model.playback.pictureInPictureActive {
+                Label("Playing in Picture in Picture", systemImage: "pip.fill")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
+            }
+            VStack(spacing: 8) {
+                Spacer()
+                if model.playback.currentRequest?.contentType != "live" { DesktopPlaybackTimeline() }
+                controlBar
+            }
+            .padding(.horizontal, 12).padding(.bottom, 10).padding(.top, 65)
+            .background(alignment: .bottom) {
+                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom).frame(height: 105).allowsHitTesting(false)
+            }
+            .opacity(showControls ? 1 : 0).allowsHitTesting(showControls).accessibilityHidden(!showControls)
+            Color.clear.contentShape(Rectangle())
+                .gesture(TapGesture(count: 2).exclusively(before: TapGesture(count: 1)).onEnded { gesture in
+                    switch gesture {
+                    case .first: toggleFullscreen()
+                    case .second: model.playback.togglePlayPause()
+                    }
+                    revealControls()
+                })
+                .padding(.bottom, model.playback.currentRequest?.contentType == "live" ? 54 : 90)
+        }
+        .foregroundStyle(.white).tint(.white)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active: revealControls()
+            case .ended: if !model.playback.isPaused { controlsVisible = false }
+            }
+        }
+        .task(id: lastMovement) {
+            do {
+                try await Task.sleep(for: .seconds(3))
+                try Task.checkCancellation()
+                if !controlsHovered { controlsVisible = false }
+            } catch { }
+        }
+        .animation(reduceMotion || model.personal.data.preferences.reduceMotion ? nil : .easeOut(duration: 0.18), value: showControls)
+    }
+    private var controlBar: some View {
+        HStack(spacing: 4) {
+            control(model.playback.isPaused ? "play.fill" : "pause.fill", model.playback.isPaused ? "Play" : "Pause", "player.playPause") { model.playback.togglePlayPause() }
+                .keyboardShortcut(.space, modifiers: [])
+            control(model.playback.isMuted || model.desktopPlayerSurface.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill", model.playback.isMuted ? "Unmute" : "Mute", "player.mute") { model.playback.toggleMute() }
+            Slider(value: Binding(get: { model.playback.isMuted ? 0 : model.desktopPlayerSurface.volume }, set: { model.desktopPlayerSurface.setVolume($0) }), in: 0...1)
+                .frame(width: 72).controlSize(.small).accessibilityLabel("Volume").accessibilityIdentifier("player.volume")
+            if model.playback.currentRequest?.contentType == "live" {
+                Label("LIVE", systemImage: "circle.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(TwitchyTheme.live).padding(.leading, 8)
+            }
+            Spacer(minLength: 4)
+            Menu {
+                Text("Quality · \(model.playback.qualityLabel)")
+                Button { Task { await model.playback.changeQuality("auto") } } label: {
+                    Label("Best · Auto", systemImage: model.playback.quality == "auto" ? "checkmark" : "")
+                }
+                ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { quality in
+                    Button { Task { await model.playback.changeQuality(quality) } } label: {
+                        Label(quality, systemImage: model.playback.quality == quality ? "checkmark" : "")
+                    }
+                }
+            } label: { Image(systemName: "gearshape").font(.system(size: 20, weight: .semibold)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("Quality: \(model.playback.qualityLabel)").accessibilityLabel("Playback quality").accessibilityIdentifier("player.quality")
+            DesktopAirPlayPicker(player: model.playback.player).frame(width: 32, height: 32).help("AirPlay")
+            if model.personal.data.preferences.pictureInPicture, AVPictureInPictureController.isPictureInPictureSupported() {
+                control(model.playback.pictureInPictureActive ? "pip.exit" : "pip.enter", "Picture in Picture", "player.pip") { model.desktopPlayerSurface.togglePiP() }
+                    .disabled(!model.desktopPlayerSurface.pipPossible && !model.playback.pictureInPictureActive)
+            }
+            control(model.personal.data.preferences.showChat && !theater ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right", model.personal.data.preferences.showChat && !theater ? "Hide chat" : "Open chat", "player.chat") {
+                model.personal.data.preferences.showChat.toggle()
+                if theater { theater = false; model.personal.data.preferences.showChat = true }
+            }
+            control(theater ? "rectangle.compress.vertical" : "rectangle.expand.vertical", theater ? "Exit theater" : "Theater", "player.theater") { theater.toggle() }
+            control(model.desktopFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", model.desktopFullscreen ? "Exit fullscreen" : "Fullscreen", "player.fullscreen") {
+                toggleFullscreen()
+            }
+        }
+        .onHover { controlsHovered = $0; revealControls() }
+    }
+    private func toggleFullscreen() {
+        guard let window = model.desktopPlayerSurface.view.window else { return }
+        model.desktopFullscreen.toggle()
+        window.toggleFullScreen(nil)
+    }
+    private func revealControls() { controlsVisible = true; lastMovement = .now }
+    private func control(_ symbol: String, _ label: String, _ identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).frame(width: 32, height: 32).contentShape(Rectangle()) }
+            .buttonStyle(.plain).help(label).accessibilityLabel(label).accessibilityIdentifier(identifier)
     }
 }
+
+struct DesktopPlaybackTimeline: View {
+    @Environment(AppModel.self) private var model
+    @State private var scrub: Double?
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            let seconds = model.playback.player.currentTime().seconds
+            let duration = model.playback.player.currentItem?.duration.seconds ?? 0
+            if duration.isFinite, duration > 0 {
+                HStack(spacing: 10) {
+                    Text(timestamp(scrub ?? (seconds.isFinite ? seconds : 0)))
+                    Slider(value: Binding(get: { scrub ?? (seconds.isFinite ? min(max(seconds, 0), duration) : 0) }, set: { scrub = $0 }), in: 0...duration) { editing in
+                        if !editing, let target = scrub {
+                            let item = model.playback.player.currentItem
+                            model.playback.player.seek(to: CMTime(seconds: target, preferredTimescale: 600)) { _ in
+                                Task { @MainActor in if model.playback.player.currentItem === item { scrub = nil } }
+                            }
+                        }
+                    }.controlSize(.small).accessibilityLabel("Playback position")
+                    Text(timestamp(duration))
+                }.font(.caption.monospacedDigit())
+            }
+        }.onChange(of: model.playback.session?.sessionId) { _, _ in scrub = nil }
+    }
+    private func timestamp(_ seconds: Double) -> String {
+        let value = Int(max(0, seconds))
+        return value >= 3600 ? String(format: "%d:%02d:%02d", value / 3600, value / 60 % 60, value % 60) : String(format: "%d:%02d", value / 60, value % 60)
+    }
+}
+
 struct DesktopNowPlayingView: View {
     @Environment(AppModel.self) private var model
     @State private var avatarURL: URL?
@@ -268,6 +431,9 @@ struct DesktopNowPlayingView: View {
                 Button { model.playback.toggleMute() } label: {
                     Image(systemName: model.playback.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill").frame(width: 24, height: 28)
                 }.accessibilityLabel(model.playback.isMuted ? "Unmute stream" : "Mute stream").accessibilityIdentifier("nowPlaying.mute")
+                Button { model.stopDesktopPlayback() } label: {
+                    Image(systemName: "stop.fill").frame(width: 24, height: 28)
+                }.help("Stop stream").accessibilityLabel("Stop stream").accessibilityIdentifier("nowPlaying.stop")
             }.buttonStyle(.borderless)
                 .accessibilityElement(children: .contain).accessibilityLabel("Now Playing")
                 .contextMenu {
@@ -288,4 +454,30 @@ struct DesktopNowPlayingView: View {
     }
 }
 
+#endif
+
+#if os(macOS)
+struct DesktopOfflineWatchView: View {
+    @Environment(AppModel.self) private var model
+    let item: LocalDownload
+    var body: some View {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 18) {
+                DesktopWatchPlayer(theater: Binding(get: { model.desktopTheater }, set: { model.desktopTheater = $0 }))
+                    .aspectRatio(16 / 9, contentMode: .fit).background(.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                Text(item.displayTitle).font(.title2.bold())
+                HStack {
+                    Text(item.metadata?.channel ?? "Downloads").font(.headline)
+                    Label("Offline", systemImage: "arrow.down.circle.fill").foregroundStyle(.secondary)
+                }
+                if let error = model.playback.error { Notice(error) }
+                Spacer(minLength: 0)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            if model.personal.data.preferences.showChat && !model.desktopTheater {
+                OfflineChatNotice().frame(width: 320).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }.padding(24).navigationTitle(item.displayTitle)
+    }
+}
 #endif

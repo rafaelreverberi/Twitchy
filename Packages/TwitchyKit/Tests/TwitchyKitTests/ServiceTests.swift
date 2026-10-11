@@ -394,5 +394,119 @@ actor RefreshGate: HTTPTransport {
     await controller.stop()
     #expect(controller.session == nil && controller.player.currentItem == nil)
     #expect(controller.isPaused)
+    for _ in 0..<50 {
+        if (await transport.requests).last?.httpMethod == "DELETE" { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
     #expect((await transport.requests).last?.httpMethod == "DELETE")
+}
+
+@Test func libraryVideoSortingPreservesArchiveAndCursor() async throws {
+    let transport = FixtureTransport([#"{"data":[],"pagination":{"cursor":"next"}}"#, #"{"data":[]}"#])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    _ = try await api.videos(userID: "channel", type: "archive", sort: .views)
+    _ = try await api.videos(userID: "channel", after: "next", type: "archive", sort: .views)
+    let requests = await transport.requests
+    for request in requests {
+        let query = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(query.contains(.init(name: "sort", value: "views")))
+        #expect(query.contains(.init(name: "type", value: "archive")))
+    }
+    #expect(requests.last?.url?.query?.contains("after=next") == true)
+}
+
+private func clipFixture(_ id: String, _ date: String, _ views: Int) -> String {
+    """
+    {"id":"\(id)","title":"\(id)","thumbnail_url":"https://example.com/clip.jpg","broadcaster_name":"Channel","url":"https://clips.twitch.tv/\(id)","created_at":"\(date)","view_count":\(views),"duration":30.5}
+    """
+}
+@Test func recentClipsFetchWholeIntervalBeforeSortingAndKeepOlderPage() async throws {
+    let older = clipFixture("popular-old", "2026-10-10T13:00:00Z", 900)
+    let newer = clipFixture("newest", "2026-10-11T10:00:00.500Z", 2)
+    let boundary = clipFixture("boundary", "2026-10-10T12:00:00Z", 50)
+    let previous = clipFixture("previous-day", "2026-10-09T20:00:00Z", 1000)
+    let transport = FixtureTransport([
+        "{\"data\":[\(older)],\"pagination\":{\"cursor\":\"next\"}}",
+        "{\"data\":[\(newer),\(boundary)]}",
+        "{\"data\":[\(boundary),\(previous)]}"
+    ])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    let end = ISO8601DateFormatter().date(from: "2026-10-11T12:00:00Z")!
+    let since = end.addingTimeInterval(-2 * 86400)
+    let page = try await api.recentClips(broadcasterID: "channel", since: since, before: end, minimumCount: 1)
+    #expect(page.data.map(\.id) == ["newest", "popular-old", "boundary"])
+    #expect(page.data.first?.viewCount == 2)
+    #expect(page.data.first?.duration == 30.5)
+    #expect(page.nextBefore == end.addingTimeInterval(-86400))
+    let next = try await api.recentClips(broadcasterID: "channel", since: since, before: page.nextBefore!, minimumCount: 1)
+    #expect(next.data.map(\.id) == ["previous-day"])
+    #expect(next.nextBefore == nil)
+    let requests = await transport.requests
+    #expect(requests.count == 3)
+    #expect(requests[1].url?.query?.contains("after=next") == true)
+    let query = try #require(URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)?.queryItems)
+    #expect(query.contains(.init(name: "started_at", value: "2026-10-10T12:00:00Z")))
+    #expect(query.contains(.init(name: "ended_at", value: "2026-10-11T12:00:00Z")))
+    #expect(query.contains(.init(name: "first", value: "100")))
+}
+@Test func recentClipsStopAtWindowAndSkipEmptyIntervals() async throws {
+    let transport = FixtureTransport([#"{"data":[]}"#, #"{"data":[]}"#])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    let end = Date(timeIntervalSince1970: 1_800_000_000)
+    let page = try await api.recentClips(broadcasterID: "empty", since: end.addingTimeInterval(-2 * 86400), before: end)
+    #expect(page.data.isEmpty && page.nextBefore == nil)
+    #expect(await transport.requests.count == 2)
+    let legacy = try JSONCoding.decoder().decode(Clip.self, from: Data(clipFixture("legacy", "2026-10-10T00:00:00Z", 1).utf8))
+    #expect(legacy.creationDate != .distantPast)
+}
+@Test func recentClipsSplitIntervalsAtHelixResultLimit() async throws {
+    let end = ISO8601DateFormatter().date(from: "2026-10-11T12:00:00Z")!
+    let item = clipFixture("limited", "2026-10-11T11:00:00Z", 1)
+    let limitedPage = "{\"data\":[" + Array(repeating: item, count: 100).joined(separator: ",") + "],\"pagination\":{\"cursor\":\"next"
+    let bodies = (0..<10).map { index in limitedPage + String(index) + "\"}}" }
+    let transport = FixtureTransport(bodies + ["{\"data\":[\(item)]}", #"{"data":[]}"#])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    let result = try await api.recentClips(broadcasterID: "busy", since: end.addingTimeInterval(-86400), before: end)
+    #expect(result.data.map(\.id) == ["limited"])
+    #expect(await transport.requests.count == 12)
+}
+
+@Test func downloadMetadataRestoresAndEstimatesOnlyKnownActiveTransfers() throws {
+    let job = try JSONCoding.decoder().decode(DownloadJob.self, from: Data(#"{"id":"job","status":"transferring","progress":0.25,"transferred_bytes":250000000,"total_bytes":1000000000}"#.utf8))
+    let date = Date(timeIntervalSince1970: 1_800_000_000)
+    var item = LocalDownload(metadata: .init(title: "The actual video", channel: "Channel", thumbnailURL: URL(string: "https://example.com/poster.jpg"), duration: "14m"), lastProgressAt: date, sourceID: UUID(), job: job, bytesPerSecond: 5_000_000, contentType: "vod", contentID: "123", authorizationReference: "")
+    #expect(item.estimatedSecondsRemaining(at: date) == 150)
+    #expect(item.estimatedSecondsRemaining(at: date.addingTimeInterval(16)) == nil)
+    let restored = try JSONDecoder().decode(LocalDownload.self, from: JSONEncoder().encode(item))
+    #expect(restored.displayTitle == "The actual video")
+    #expect(restored.metadata?.thumbnailURL?.absoluteString == "https://example.com/poster.jpg")
+    item.job.totalBytes = nil
+    #expect(item.estimatedSecondsRemaining(at: date) == nil)
+    item.job.totalBytes = 1_000_000_000; item.bytesPerSecond = .nan
+    #expect(item.estimatedSecondsRemaining(at: date) == nil)
+    item.bytesPerSecond = 0
+    #expect(item.estimatedSecondsRemaining(at: date) == nil)
+    item.job.status = .completed; item.bytesPerSecond = 5_000_000
+    #expect(item.estimatedSecondsRemaining(at: date) == nil)
+    var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(item)) as? [String: Any])
+    object.removeValue(forKey: "metadata"); object.removeValue(forKey: "lastProgressAt"); object.removeValue(forKey: "localThumbnailFilename")
+    let legacy = try JSONDecoder().decode(LocalDownload.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(legacy.metadata == nil && legacy.displayTitle == "Video download")
+}
+
+private actor SlowCleanupTransport: HTTPTransport {
+    func send(_ request: URLRequest) async throws -> HTTPResult {
+        if request.httpMethod == "DELETE" { try await Task.sleep(for: .seconds(1)); return HTTPResult(data: Data(), status: 204) }
+        let body = request.url!.path.hasSuffix("capabilities") ? capabilities : #"{"session_id":"slow-cleanup","hls_url":"https://source.example/media/master.m3u8","qualities":["auto"]}"#
+        return HTTPResult(data: Data(body.utf8), status: 200)
+    }
+}
+@Test @MainActor func stoppingPlaybackDoesNotWaitForAnUnresponsiveSource() async throws {
+    let client = try StreamingSourceClient(source: .init(name: "Fixture", baseURL: URL(string: "https://source.example")!), transport: SlowCleanupTransport())
+    let controller = PlaybackController()
+    await controller.start(client: client, request: .init(contentType: "live", channelLogin: "alice"))
+    let started = ContinuousClock.now
+    await controller.stop()
+    #expect(started.duration(to: .now) < .milliseconds(500))
+    #expect(controller.player.currentItem == nil && controller.session == nil)
 }

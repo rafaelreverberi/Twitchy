@@ -4,6 +4,7 @@ import TwitchyAPI
 import TwitchyCore
 import TwitchyChat
 import TwitchyDesignSystem
+import TwitchyPlayback
 
 struct ChannelDetail: View {
     @Environment(AppModel.self) private var model
@@ -19,7 +20,7 @@ struct ChannelDetail: View {
     @State private var attempt = 0
     #if os(macOS)
     @State private var watching = false
-    @State private var theater = false
+    private var theater: Bool { get { model.desktopTheater } nonmutating set { model.desktopTheater = newValue } }
     @State private var profile: TwitchUser?
     @State private var channelInfo: ChannelInfo?
     @State private var library = "Recent videos"
@@ -29,6 +30,12 @@ struct ChannelDetail: View {
     @State private var clipCursor: String?
     @State private var metadataLoading = true
     @State private var libraryLoading = false
+    @State private var libraryOrder = VideoSort.recent
+    @State private var libraryError: String?
+    @State private var libraryGeneration = UUID()
+    @State private var recentClipBefore: Date?
+    @State private var recentClipSince = Date.now
+    @State private var libraryLoaded = false
     @State private var playingTitle: String?
     #endif
     var body: some View {
@@ -112,8 +119,8 @@ struct ChannelDetail: View {
                             if model.personal.data.preferences.showChat { ChatPanel(broadcasterID: broadcasterID).frame(height: 360) }
                         }
                     }
-                    HStack { VStack(alignment: .leading) { Text(selection.name).font(.title.bold()); Text(stream?.title ?? "Channel details").foregroundStyle(.secondary); if let stream { Text("\(stream.gameName) · \(stream.viewerCount.formatted()) viewers").font(.caption) } }; Spacer(); Button { model.personal.favorite(selection.login) } label: { Image(systemName: model.personal.data.favorites.contains(selection.login) ? "star.fill" : "star") }.accessibilityLabel("Toggle favorite") }
-                    HStack { Button("Watch live") { Task { await model.play(selection) } }.buttonStyle(.borderedProminent); Link("Follow on Twitch", destination: URL(string: "https://www.twitch.tv/\(selection.login)")!); Button("Fullscreen") { fullscreen = true }.disabled(model.playback.session == nil) }
+                    HStack { VStack(alignment: .leading) { Text(selection.name).font(.title.bold()); Text(stream?.title ?? "Channel details").foregroundStyle(.secondary); if let stream { Text("\(stream.gameName) · \(stream.viewerCount.formatted()) viewers").font(.caption) } } }
+                    HStack { Button("Watch live") { Task { await model.play(selection) } }.buttonStyle(.borderedProminent); Button("Fullscreen") { fullscreen = true }.disabled(model.playback.session == nil) }
                     if let downloadNotice { Text(downloadNotice).foregroundStyle(.secondary) }
                     if let error { Notice(error) }
                     if let error = model.error { Notice(error) }
@@ -127,8 +134,8 @@ struct ChannelDetail: View {
                             Text(model.playback.state.rawValue).font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    if !videos.isEmpty { Text("Recent videos").font(.title2.bold()); ForEach(videos) { video in HStack { VStack(alignment: .leading) { Text(video.title); Text(video.duration).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "vod", contentID: video.id) } }; downloadButton(type: "vod", id: video.id); if let url = URL(string: video.url) { Link("Twitch", destination: url) } } } }
-                    if !clips.isEmpty { Text("Channel clips").font(.title2.bold()); ForEach(clips) { clip in HStack { Text(clip.title); Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "clip", contentID: clip.id) } }; downloadButton(type: "clip", id: clip.id); if let url = URL(string: clip.url) { Link("Twitch", destination: url) } } } }
+                    if !videos.isEmpty { Text("Recent videos").font(.title2.bold()); ForEach(videos) { video in HStack { VStack(alignment: .leading) { Text(video.title); Text(video.duration).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "vod", contentID: video.id) } }; downloadButton(type: "vod", id: video.id, title: video.title, thumbnail: video.thumbnailUrl, duration: video.duration); if let url = URL(string: video.url) { Link("Twitch", destination: url) } } } }
+                    if !clips.isEmpty { Text("Channel clips").font(.title2.bold()); ForEach(clips) { clip in HStack { Text(clip.title); Spacer(); Button("Watch") { Task { await model.play(selection, contentType: "clip", contentID: clip.id) } }; downloadButton(type: "clip", id: clip.id, title: clip.title, thumbnail: clip.thumbnailUrl); if let url = URL(string: clip.url) { Link("Twitch", destination: url) } } } }
                 }.padding(24)
             }.navigationTitle(selection.name).toolbar { ToolbarItem { Button("Done") { dismiss() } } }
         }
@@ -152,9 +159,6 @@ struct ChannelDetail: View {
             if let id = broadcasterID {
                 #if os(macOS)
                 do { channelInfo = try await api.channel(id: id).data.first } catch { self.error = error.localizedDescription }
-                do { let page = try await api.videos(userID: id); videos = page.data; videoCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
-                do { let page = try await api.videos(userID: id, type: "archive"); archives = page.data; archiveCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
-                do { let page = try await api.clips(broadcasterID: id); clips = page.data; clipCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
                 #else
                 async let v = api.videos(userID: id); async let c = api.clips(broadcasterID: id)
                 videos = try await v.data; clips = try await c.data
@@ -163,11 +167,11 @@ struct ChannelDetail: View {
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }
     }
-    @ViewBuilder private func downloadButton(type: String, id: String) -> some View {
+    @ViewBuilder private func downloadButton(type: String, id: String, title: String? = nil, thumbnail: String? = nil, duration: String? = nil) -> some View {
         #if !os(tvOS)
         if model.sources.active?.capabilities?.clientSideDownloads == true {
             Button("Download") { Task {
-                do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality); downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback." }
+                do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title ?? selection.name, channel: selection.name, thumbnailURL: thumbnail.flatMap { URL(string: $0.replacingOccurrences(of: "%{width}", with: "320").replacingOccurrences(of: "%{height}", with: "180")) }, duration: duration)); downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback." }
                 catch { downloadNotice = error.localizedDescription }
             } }
         }
@@ -175,7 +179,7 @@ struct ChannelDetail: View {
     }
     @ViewBuilder private var nativePlayer: some View {
         #if os(macOS)
-        DesktopNativePlayer(surface: model.desktopPlayerSurface, pictureInPicture: model.personal.data.preferences.pictureInPicture)
+        DesktopWatchPlayer(theater: Binding(get: { theater }, set: { theater = $0 }))
         #else
         NativePlayer(player: model.playback.player, pictureInPicture: model.personal.data.preferences.pictureInPicture) { active in
             model.playback.pictureInPictureActive = active
@@ -256,7 +260,7 @@ struct ChatPanel: View {
             Divider()
             if model.playback.currentRequest?.contentType != "live" { Text("Live channel chat · no replay").font(.caption).foregroundStyle(.secondary) }
             #endif
-            if model.auth.session?.scopes.contains("user:read:chat") != true {
+            if model.isOfflinePlayback { OfflineChatNotice() } else if model.auth.session?.scopes.contains("user:read:chat") != true {
                 Text("Connect with chat permissions to join this channel.").foregroundStyle(.secondary)
                 Button("Authorize chat") { Task { await model.login(chat: true) } }
             } else {
@@ -310,7 +314,7 @@ struct ChatPanel: View {
         .background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12))
         #endif
         .task(id: (broadcasterID ?? "") + (model.auth.session?.accessToken ?? "")) {
-            guard let id = broadcasterID, let api = model.api, let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
+            guard !model.isOfflinePlayback, let id = broadcasterID, let api = model.api, let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
             model.chat.connect(api: api, broadcasterID: id, userID: session.userID)
         }.onDisappear { model.chat.disconnect() }
     }
@@ -334,7 +338,7 @@ extension ChannelDetail {
             HStack(alignment: .top, spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                        if watching { desktopPlayer; desktopIdentity; playerActions }
+                        if watching { desktopPlayer; desktopIdentity }
                         else { channelHero; channelActions; aboutChannel }
                         if let error { Notice(error) }
                         if let error = model.error { Notice(error) }
@@ -350,13 +354,14 @@ extension ChannelDetail {
             }
         }
         .background(TwitchyTheme.background)
+        .task(id: "\(broadcasterID ?? "")|\(library)|\(libraryOrder.rawValue)") { await reloadLibrary() }
         .onChange(of: model.nowPlaying?.id) { _, id in if id == nil { watching = false; theater = false } }
         .navigationTitle(selection.name)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
                     if watching {
-                        savePosition(); watching = false; theater = false
+                        showDesktopChannel()
                     } else { model.selectedChannel = nil }
                 } label: { Label(watching ? "Channel" : "Back", systemImage: "chevron.left") }
                 .accessibilityIdentifier("channel.back")
@@ -383,17 +388,24 @@ extension ChannelDetail {
     }
     private var desktopIdentity: some View {
         HStack(alignment: .top, spacing: 16) {
-            RemoteImage(URL(string: profile?.profileImageUrl ?? ""), symbol: "person.crop.circle")
-                .frame(width: watching ? 62 : 82, height: watching ? 62 : 82).clipShape(Circle())
-                .overlay { Circle().strokeBorder(TwitchyTheme.accent.opacity(0.7), lineWidth: 3) }
+            Group {
+                if watching {
+                    Button { showDesktopChannel() } label: { desktopAvatar }
+                        .buttonStyle(.plain).help("View channel")
+                        .accessibilityLabel("View \(profile?.displayName ?? selection.name)'s channel")
+                        .accessibilityIdentifier("player.channelAvatar")
+                } else { desktopAvatar }
+            }
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    Text(profile?.displayName ?? selection.name).font(watching ? .title2.bold() : .largeTitle.bold())
+                    if watching {
+                        Button { showDesktopChannel() } label: {
+                            Text(profile?.displayName ?? selection.name).font(.title2.bold()).foregroundStyle(.primary)
+                        }.buttonStyle(.plain).help("View channel").accessibilityIdentifier("player.channelName")
+                    } else { Text(profile?.displayName ?? selection.name).font(.largeTitle.bold()) }
                     if stream != nil && (!watching || model.playback.currentRequest?.contentType == "live") { MacLiveBadge() }
                     Spacer()
-                    Button { model.personal.favorite(selection.login) } label: {
-                        Image(systemName: model.personal.data.favorites.contains(selection.login) ? "star.fill" : "star")
-                    }.buttonStyle(.bordered).help("Save channel to your favorites").accessibilityLabel("Toggle favorite")
+
                 }
                 Text(watching ? (playingTitle ?? stream?.title ?? channelInfo?.title ?? "Stream playback") : (stream?.title ?? channelInfo?.title ?? "Welcome to the channel"))
                     .font(.headline).lineLimit(2)
@@ -405,6 +417,16 @@ extension ChannelDetail {
             }
         }
     }
+    private var desktopAvatar: some View {
+        RemoteImage(URL(string: profile?.profileImageUrl ?? ""), symbol: "person.crop.circle")
+            .frame(width: watching ? 62 : 82, height: watching ? 62 : 82).clipShape(Circle())
+            .overlay { Circle().strokeBorder(TwitchyTheme.accent.opacity(0.7), lineWidth: 3) }
+    }
+    private func showDesktopChannel() {
+        savePosition()
+        watching = false
+        theater = false
+    }
     private var channelActions: some View {
         HStack(spacing: 12) {
             if stream != nil {
@@ -412,7 +434,6 @@ extension ChannelDetail {
                     .buttonStyle(.borderedProminent).accessibilityIdentifier("channel.watchLive")
             } else if metadataLoading { ProgressView("Loading channel…") }
             else { Label("Currently offline", systemImage: "moon").foregroundStyle(.secondary) }
-            Link(destination: channelURL) { Label("Follow on Twitch", systemImage: "heart") }.buttonStyle(.bordered)
             ShareLink(item: channelURL) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
             Spacer()
         }
@@ -441,28 +462,6 @@ extension ChannelDetail {
             }
         }
     }
-    private var playerActions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { playbackButtons; Spacer(); Link("Follow on Twitch", destination: channelURL).buttonStyle(.bordered) }
-            VStack(alignment: .leading, spacing: 12) { HStack { playbackButtons }; Link("Follow on Twitch", destination: channelURL).buttonStyle(.bordered) }
-        }
-    }
-    @ViewBuilder private var playbackButtons: some View {
-        Button {
-            model.personal.data.preferences.showChat.toggle()
-            if theater { theater = false }
-        } label: { Label(model.personal.data.preferences.showChat && !theater ? "Hide chat" : "Open chat", systemImage: "bubble.left.and.bubble.right") }.buttonStyle(.bordered)
-        Button { theater.toggle() } label: { Label(theater ? "Exit theater" : "Theater", systemImage: "rectangle.expand.vertical") }.buttonStyle(.bordered)
-        if let session = model.playback.session {
-            Button { model.playback.toggleMute() } label: { Image(systemName: model.playback.isMuted ? "speaker.slash" : "speaker.wave.2") }.buttonStyle(.bordered).accessibilityLabel(model.playback.isMuted ? "Unmute" : "Mute")
-            Button("Stop stream", systemImage: "stop.fill") { model.stopDesktopPlayback(); watching = false; theater = false }.buttonStyle(.bordered).accessibilityIdentifier("player.stop")
-            Menu(model.playback.qualityLabel) {
-                Button("Best · Auto") { Task { await model.playback.changeQuality("auto") } }
-                ForEach(session.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
-            }.menuStyle(.borderlessButton).fixedSize().padding(8).background(TwitchyTheme.elevated, in: RoundedRectangle(cornerRadius: 8))
-            Button { fullscreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.bordered).accessibilityLabel("Fullscreen")
-        }
-    }
     private var desktopLibrary: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -470,29 +469,33 @@ extension ChannelDetail {
                 Spacer()
                 if metadataLoading || libraryLoading { ProgressView().controlSize(.small) }
             }
-            Picker("Channel library", selection: $library) {
-                Text("Recent videos").tag("Recent videos")
-                Text("Past broadcasts").tag("Past broadcasts")
-                Text("Clips").tag("Clips")
-            }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 470).accessibilityIdentifier("channel.library")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 22) { libraryTabs; librarySortMenu }
+                VStack(alignment: .leading, spacing: 14) { libraryTabs; librarySortMenu }
+            }
             if library == "Clips" {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 190 : 250))], alignment: .leading, spacing: 22) {
+                Text(libraryOrder == .recent ? "Newest clips · Last 30 days" : "Most viewed clips · All time")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let libraryError { Notice(libraryError); Button("Retry") { Task { await reloadLibrary() } }.disabled(libraryLoading) }
+            if library == "Clips" {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 220 : 260), spacing: 18)], alignment: .leading, spacing: 22) {
                     ForEach(clips) { clip in
-                        libraryCard(title: clip.title, thumbnail: clip.thumbnailUrl, badge: "CLIP", detail: clip.broadcasterName, type: "clip", id: clip.id, url: clip.url)
+                        libraryCard(title: clip.title, thumbnail: clip.thumbnailUrl, badge: clip.duration.map { clipDuration($0) } ?? "CLIP", detail: clipDetail(clip), type: "clip", id: clip.id, url: clip.url)
                     }
                 }
             } else {
                 let items = library == "Past broadcasts" ? archives : videos
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 190 : 250))], alignment: .leading, spacing: 22) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: watching ? 220 : 260), spacing: 18)], alignment: .leading, spacing: 22) {
                     ForEach(items) { video in
                         libraryCard(title: video.title, thumbnail: video.thumbnailUrl, badge: video.duration, detail: videoDetail(video), type: "vod", id: video.id, url: video.url)
                     }
                 }
             }
-            if !metadataLoading && (library == "Clips" ? clips.isEmpty : library == "Past broadcasts" ? archives.isEmpty : videos.isEmpty) {
-                EmptyState("No \(library.lowercased()) available", detail: "Published videos and clips will appear here when Twitch makes them available.")
+            if libraryLoaded && !libraryLoading && libraryError == nil && (library == "Clips" ? clips.isEmpty : library == "Past broadcasts" ? archives.isEmpty : videos.isEmpty) {
+                EmptyState("No \(library.lowercased()) available", detail: library == "Clips" && libraryOrder == .recent ? "No clips were created in the last 30 days. Try Most viewed for older highlights." : "Published videos and clips will appear here when Twitch makes them available.")
             }
-            if (library == "Clips" ? clipCursor : library == "Past broadcasts" ? archiveCursor : videoCursor) != nil {
+            if (library == "Clips" ? (libraryOrder == .recent ? recentClipBefore.map { _ in "recent" } : clipCursor) : library == "Past broadcasts" ? archiveCursor : videoCursor) != nil {
                 Button("Load more") { Task { await moreLibrary() } }.buttonStyle(.bordered).disabled(libraryLoading)
             }
         }
@@ -501,27 +504,30 @@ extension ChannelDetail {
         VStack(alignment: .leading, spacing: 9) {
             Button { startWatching(type: type, id: id, title: title) } label: {
                 VStack(alignment: .leading, spacing: 10) {
-                    RemoteImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "640").replacingOccurrences(of: "%{height}", with: "360").replacingOccurrences(of: "{width}", with: "640").replacingOccurrences(of: "{height}", with: "360")))
-                        .aspectRatio(16 / 9, contentMode: .fit)
+                    Color.clear.aspectRatio(16 / 9, contentMode: .fit).overlay { RemoteImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "320").replacingOccurrences(of: "%{height}", with: "180").replacingOccurrences(of: "{width}", with: "320").replacingOccurrences(of: "{height}", with: "180"))) }
                         .overlay(alignment: .bottomLeading) { Text(badge).font(.caption.bold()).foregroundStyle(.white).padding(6).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 5)).padding(10) }
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                    Text(title).font(.headline).lineLimit(2).frame(height: 40, alignment: .topLeading)
+                        .overlay(alignment: .topTrailing) {
+                            Image(systemName: "play.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 32, height: 32).background(.black.opacity(0.6), in: Circle()).padding(10)
+                        }
+                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).frame(height: 40, alignment: .topLeading)
                 }
-            }.buttonStyle(.plain).accessibilityLabel("Watch \(title)")
+            }.buttonStyle(DesktopLibraryButtonStyle()).accessibilityLabel("Watch \(title)")
             HStack {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Menu {
                     Button("Watch") { startWatching(type: type, id: id, title: title) }
-                    downloadButton(type: type, id: id)
+                    downloadButton(type: type, id: id, title: title, thumbnail: thumbnail, duration: badge)
                     if let url = URL(string: url) { Link("Open on Twitch", destination: url) }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Options for \(title)")
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Options for \(title)")
             }
-        }
+        }.padding(12).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 16))
     }
     private func videoDetail(_ video: Video) -> String {
         var parts: [String] = []
-        if let views = video.viewCount { parts.append("\(views.formatted()) views") }
+        if let views = video.viewCount { parts.append("\(views.formatted()) \(views == 1 ? "view" : "views")") }
         if let value = video.createdAt, let date = ISO8601DateFormatter().date(from: value) { parts.append(date.formatted(.relative(presentation: .named))) }
         return parts.isEmpty ? selection.name : parts.joined(separator: " · ")
     }
@@ -533,22 +539,122 @@ extension ChannelDetail {
             model.startDesktopPlayback(selection, type: type, contentID: id, title: title ?? stream?.title, thumbnail: stream?.thumbnail)
         }
     }
-    private func moreLibrary() async {
+    private var libraryTabs: some View {
+        HStack(spacing: 4) {
+            ForEach(["Recent videos", "Past broadcasts", "Clips"], id: \.self) { tab in
+                Button { library = tab } label: {
+                    Text(tab).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        .foregroundStyle(library == tab ? .primary : .secondary)
+                        .padding(.horizontal, 14).padding(.vertical, 12).frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .background(library == tab ? TwitchyTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(alignment: .bottom) { Capsule().fill(library == tab ? TwitchyTheme.accent : .clear).frame(height: 3).padding(.horizontal, 14) }
+                }.buttonStyle(.plain).accessibilityValue(library == tab ? "Selected" : "")
+                    .accessibilityIdentifier("channel.library.\(tab)")
+            }
+        }.padding(4).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12)).accessibilityElement(children: .contain).accessibilityLabel("Channel library").accessibilityIdentifier("channel.library")
+    }
+    private var librarySortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: $libraryOrder) {
+                Text("Most recent").tag(VideoSort.recent)
+                Text("Most viewed").tag(VideoSort.views)
+            }.pickerStyle(.inline)
+        } label: {
+            Label(libraryOrder == .recent ? "Most recent" : "Most viewed", systemImage: "arrow.up.arrow.down")
+                .font(.subheadline.weight(.medium)).padding(.vertical, 8)
+        }.fixedSize().accessibilityLabel("Sort library").accessibilityIdentifier("channel.library.sort")
+    }
+    private func clipDuration(_ duration: Double) -> String {
+        guard duration.isFinite, duration >= 0, duration < Double(Int.max) else { return "CLIP" }
+        let seconds = Int(duration.rounded())
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+    private func clipDetail(_ clip: Clip) -> String {
+        var parts: [String] = []
+        if let views = clip.viewCount { parts.append("\(views.formatted()) \(views == 1 ? "view" : "views")") }
+        if clip.creationDate != .distantPast { parts.append(clip.creationDate.formatted(.relative(presentation: .named))) }
+        return parts.isEmpty ? clip.broadcasterName : parts.joined(separator: " · ")
+    }
+    private func sortedVideos(_ items: [Video]) -> [Video] {
+        items.sorted { left, right in
+            if libraryOrder == .views, left.viewCount != right.viewCount { return (left.viewCount ?? 0) > (right.viewCount ?? 0) }
+            if left.createdAt != right.createdAt { return (left.createdAt ?? "") > (right.createdAt ?? "") }
+            return left.id < right.id
+        }
+    }
+    private func reloadLibrary() async {
+        let generation = UUID(); libraryGeneration = generation
+        libraryLoading = true; libraryLoaded = false; libraryError = nil
+        defer { if libraryGeneration == generation { libraryLoading = false } }
+        clips = []; archives = []; videos = []
+        clipCursor = nil; archiveCursor = nil; videoCursor = nil; recentClipBefore = nil
         guard let api = model.api, let id = broadcasterID else { return }
-        let tab = library; libraryLoading = true; defer { libraryLoading = false }
+        let tab = library, order = libraryOrder
         do {
-            if tab == "Clips", let cursor = clipCursor {
-                let page = try await api.clips(broadcasterID: id, after: cursor)
-                let existing = Set(clips.map(\.id)); clips += page.data.filter { !existing.contains($0.id) }; clipCursor = page.pagination?.cursor
-            } else if tab == "Past broadcasts", let cursor = archiveCursor {
-                let page = try await api.videos(userID: id, after: cursor, type: "archive")
-                let existing = Set(archives.map(\.id)); archives += page.data.filter { !existing.contains($0.id) }; archiveCursor = page.pagination?.cursor
-            } else if let cursor = videoCursor {
-                let page = try await api.videos(userID: id, after: cursor)
-                let existing = Set(videos.map(\.id)); videos += page.data.filter { !existing.contains($0.id) }; videoCursor = page.pagination?.cursor
+            if tab == "Clips" {
+                if order == .recent {
+                    // Freeze the upper boundary so Load more cannot skip or duplicate new clips.
+                    let end = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970))
+                    let since = end.addingTimeInterval(-30 * 86400)
+                    let page = try await api.recentClips(broadcasterID: id, since: since, before: end)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    clips = page.data; recentClipBefore = page.nextBefore; recentClipSince = since
+                } else {
+                    let page = try await api.clips(broadcasterID: id)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    clips = page.data; clipCursor = page.pagination?.cursor
+                }
+            } else {
+                let page = try await api.videos(userID: id, type: tab == "Past broadcasts" ? "archive" : nil, sort: order)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                if tab == "Past broadcasts" { archives = sortedVideos(page.data); archiveCursor = page.pagination?.cursor }
+                else { videos = sortedVideos(page.data); videoCursor = page.pagination?.cursor }
+            }
+            libraryLoaded = true
+        } catch is CancellationError { }
+        catch { if generation == libraryGeneration && !Task.isCancelled { libraryError = error.localizedDescription } }
+    }
+    private func moreLibrary() async {
+        guard !libraryLoading, let api = model.api, let id = broadcasterID else { return }
+        let generation = libraryGeneration, tab = library, order = libraryOrder
+        libraryLoading = true; libraryError = nil
+        defer { if generation == libraryGeneration { libraryLoading = false } }
+        do {
+            if tab == "Clips" {
+                let newClips: [Clip]
+                if order == .recent, let before = recentClipBefore {
+                    let page = try await api.recentClips(broadcasterID: id, since: recentClipSince, before: before)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    newClips = page.data; recentClipBefore = page.nextBefore
+                } else if let cursor = clipCursor {
+                    let page = try await api.clips(broadcasterID: id, after: cursor)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    newClips = page.data; clipCursor = page.pagination?.cursor
+                } else { return }
+                let existing = Set(clips.map(\.id)); clips += newClips.filter { !existing.contains($0.id) }
+            } else {
+                guard let cursor = tab == "Past broadcasts" ? archiveCursor : videoCursor else { return }
+                let page = try await api.videos(userID: id, after: cursor, type: tab == "Past broadcasts" ? "archive" : nil, sort: order)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                if tab == "Past broadcasts" {
+                    let existing = Set(archives.map(\.id)); archives = sortedVideos(archives + page.data.filter { !existing.contains($0.id) }); archiveCursor = page.pagination?.cursor
+                } else {
+                    let existing = Set(videos.map(\.id)); videos = sortedVideos(videos + page.data.filter { !existing.contains($0.id) }); videoCursor = page.pagination?.cursor
+                }
             }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if generation == libraryGeneration && !Task.isCancelled { libraryError = error.localizedDescription } }
+    }
+}
+
+private struct DesktopLibraryButtonStyle: ButtonStyle {
+    @State private var hovered = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(hovered ? TwitchyTheme.accent.opacity(0.7) : .clear, lineWidth: 2) }
+            .onHover { hovered = $0 }
     }
 }
 #endif

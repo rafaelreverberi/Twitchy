@@ -23,7 +23,11 @@ import AVKit
     #endif
     let playback = PlaybackController()
     let chat = ChatController()
+    #if DEBUG && os(iOS) && targetEnvironment(simulator)
+    let downloads = DownloadManager(directory: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("UI-downloads-" + UUID().uuidString) : TwitchyStoragePaths.directory.appendingPathComponent("Downloads"))
+    #else
     let downloads = DownloadManager()
+    #endif
     #if os(tvOS)
     var startupComplete = false
     #endif
@@ -89,11 +93,18 @@ import AVKit
     }
     #if os(macOS)
     var nowPlaying: DesktopNowPlaying?
+    var desktopFullscreen = false
+    var desktopTheater = false
     @ObservationIgnored private var desktopPlaybackTask: Task<Void, Never>?
     @ObservationIgnored private var desktopRetryTask: Task<Void, Never>?
     private var desktopRetryAttempt = 0
-    @ObservationIgnored lazy var desktopPlayerSurface = DesktopPlayerSurface(playback: playback)
+    @ObservationIgnored lazy var desktopPlayerSurface: DesktopPlayerSurface = {
+        let surface = DesktopPlayerSurface(playback: playback)
+        surface.restorePlayback = { [weak self] in self?.reopenDesktopPlayback() }
+        return surface
+    }()
     func startDesktopPlayback(_ selection: ChannelSelection, type: String = "live", contentID: String? = nil, title: String? = nil, thumbnail: URL? = nil) {
+        offlineDownload = nil
         saveDesktopPosition()
         desktopPlaybackTask?.cancel(); desktopRetryTask?.cancel(); desktopRetryAttempt = 0
         var active = selection
@@ -120,7 +131,7 @@ import AVKit
         }
     }
     func retryDesktopPlaybackIfNeeded() {
-        guard nowPlaying != nil, personal.data.preferences.retryPlayback, desktopRetryAttempt < 2 else { return }
+        guard !isOfflinePlayback, nowPlaying != nil, personal.data.preferences.retryPlayback, desktopRetryAttempt < 2 else { return }
         desktopRetryAttempt += 1
         let delay = desktopRetryAttempt * 2
         desktopRetryTask = Task {
@@ -130,7 +141,10 @@ import AVKit
     }
     func stopDesktopPlayback() {
         sampleViewing(); saveDesktopPosition(); desktopPlaybackTask?.cancel(); desktopPlaybackTask = nil; desktopRetryTask?.cancel(); desktopRetryTask = nil
-        nowPlaying = nil; playback.player.pause(); chat.disconnect()
+        desktopPlayerSurface.stopPiP()
+        if desktopFullscreen { desktopPlayerSurface.view.window?.toggleFullScreen(nil); desktopFullscreen = false }
+        desktopTheater = false
+        nowPlaying = nil; offlineDownload = nil; playback.player.pause(); chat.disconnect()
         Task { await playback.stop() }
     }
     #endif
@@ -146,7 +160,20 @@ import AVKit
     var loading = false
     var showingSettings = false
     var selectedChannel: ChannelSelection?
-    var localPlayback: URL?
+    var offlineDownload: LocalDownload?
+    var isOfflinePlayback: Bool { offlineDownload != nil }
+    func playOffline(_ item: LocalDownload, url: URL) {
+        offlineDownload = item; chat.disconnect()
+        let channel = ChannelSelection(login: (item.metadata?.channel ?? "offline").lowercased(), name: item.metadata?.channel ?? "Downloads", contentType: item.contentType, contentID: item.contentID, returnToPlayback: true, offlineDownloadID: item.id)
+        #if os(macOS)
+        saveDesktopPosition(); desktopPlaybackTask?.cancel(); desktopRetryTask?.cancel()
+        nowPlaying = .init(selection: channel, title: item.displayTitle, thumbnail: downloads.thumbnailFile(for: item) ?? item.metadata?.thumbnailURL)
+        selectedChannel = channel
+        desktopPlaybackTask = Task { await playback.startOffline(url: url, type: item.contentType, contentID: item.contentID, expectedDuration: item.metadata?.expectedDuration) }
+        #elseif os(iOS)
+        mobile.startOffline(channel, item: item, url: url)
+        #endif
+    }
     var clientID = UserDefaults.standard.string(forKey: "oauth.clientID") ?? "fvgm8ut01pboy0rvn1f6dkdqxw6rft" { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID"); saveOAuthSettings() } }
     var deviceClientID = UserDefaults.standard.string(forKey: "oauth.deviceClientID").flatMap { $0.isEmpty ? nil : $0 } ?? "fvgm8ut01pboy0rvn1f6dkdqxw6rft" { didSet { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID"); saveOAuthSettings() } }
     var redirect = UserDefaults.standard.string(forKey: "oauth.redirect").flatMap { $0.isEmpty ? nil : $0 } ?? "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html" { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect"); saveOAuthSettings() } }
@@ -186,6 +213,16 @@ import AVKit
             let scenario = ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_SCENARIO"]
             if ProcessInfo.processInfo.environment["TWITCHY_UI_SEARCH_FIXTURE"] != "1" {
                 selectedChannel = .init(login: scenario.map { "fixture-" + $0 } ?? "fixture", name: "Playback test")
+            }
+            if ProcessInfo.processInfo.environment["TWITCHY_UI_OFFLINE_FIXTURE"] == "1" {
+                let client = try? StreamingSourceClient(source: .init(name: "Offline fixture", baseURL: URL(string: "http://localhost:8181")!, allowLocalHTTP: true))
+                if let client {
+                    await downloads.enqueue(client: client, type: "clip", contentID: "fixture-clip", permission: "fixture-owner", metadata: .init(title: "Saved clip", channel: "Playback test", duration: "0:06"))
+                    for _ in 0..<100 {
+                        if downloads.items.first?.job.status == .completed || downloads.items.first?.job.status == .failed { break }
+                        try? await Task.sleep(for: .milliseconds(50))
+                    }
+                }
             }
             return
         }
@@ -298,7 +335,7 @@ import AVKit
         }
     }
 }
-struct ChannelSelection: Identifiable { let id = UUID(); var login: String; var name: String; var broadcasterID: String?; var contentType: String? = nil; var contentID: String? = nil; var resumePosition: Double = 0; var returnToPlayback = false }
+struct ChannelSelection: Identifiable { let id = UUID(); var login: String; var name: String; var broadcasterID: String?; var contentType: String? = nil; var contentID: String? = nil; var resumePosition: Double = 0; var returnToPlayback = false; var offlineDownloadID: UUID? = nil }
 
 #if os(macOS)
 struct DesktopNowPlaying: Identifiable {

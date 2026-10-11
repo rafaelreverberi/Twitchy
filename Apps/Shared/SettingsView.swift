@@ -8,15 +8,12 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                HStack(spacing: 20) { RemoteImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? "Connect to follow your favorites").foregroundStyle(.secondary); Text(model.auth.status).font(.caption).foregroundStyle(TwitchyTheme.live) } }
+                HStack(spacing: 20) { RemoteImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? "Connect your Twitch account").foregroundStyle(.secondary); Text(model.auth.status).font(.caption).foregroundStyle(TwitchyTheme.live) } }
                 if let error = model.auth.error { Notice(error) }
                 if model.auth.status != "Connected" { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
                 else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
                 Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
                 Divider()
-                Text("Favorites").font(.title2.bold())
-                if model.personal.data.favorites.isEmpty { Text("Save a favorite from any channel page.").foregroundStyle(.secondary) }
-                ForEach(model.personal.data.favorites, id: \.self) { login in HStack { Button(login) { model.open(login: login, name: login) }; Spacer(); Button { model.personal.favorite(login) } label: { Image(systemName: "star.slash") }.accessibilityLabel("Remove \(login) from favorites") } }
                 Text("Watch history").font(.title2.bold())
                 ForEach(model.personal.data.history) { entry in Button { model.open(login: entry.login, name: entry.title) } label: { HStack { Text(entry.title); Spacer(); Text(entry.watchedAt, style: .date).font(.caption).foregroundStyle(.secondary) } } }
                 if !model.personal.data.history.isEmpty { Button("Clear watch history", role: .destructive) { model.personal.clearHistory() } }
@@ -82,7 +79,7 @@ struct SettingsView: View {
                     Label(model.sync.cloud.status, systemImage: "icloud")
                     if let date = model.sync.cloud.lastSyncedAt { Text("Last synced \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                     Button("Sync now") { Task { await model.sync.sync() } }.disabled(model.sync.cloud.isSyncing)
-                    Text("Sources and their access tokens, preferences, favorites, searches and watch history sync through your iCloud account. Sign in to Twitch separately on each device. Downloaded files stay on this device.").font(.caption).foregroundStyle(.secondary)
+                    Text("Sources and their access tokens, preferences, searches and watch history sync through your iCloud account. Sign in to Twitch separately on each device. Downloaded files stay on this device.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
                 Section("Playback") {
@@ -110,7 +107,7 @@ struct SettingsView: View {
                 Section("Appearance") { Toggle("Dark theme", isOn: $personal.data.preferences.darkTheme); Toggle("Reduce animations", isOn: $personal.data.preferences.reduceMotion) }
                 Section("About") {
                     Text("Twitchy 0.1.0 (1) · Rafael Reverberi")
-                    NavigationLink("Privacy") { LegalView(title: "Privacy", text: "Twitch authentication and metadata go directly to Twitch. Your configured streaming source receives playback and authorized download requests, plus its own credentials. Twitch credentials are never sent to it. Twitch sign-in stays in device-only Keychain entries. With a provisioned iCloud build, sources including their access tokens, preferences, public app settings, recent searches, favorites and watch history sync through encrypted private CloudKit records. The offline sync journal is encrypted; imported source tokens enter the source Keychain. Downloads stay local. Viewing time is used locally to rank live channels. No analytics is collected. Chat history is held only in bounded memory.") }
+                    NavigationLink("Privacy") { LegalView(title: "Privacy", text: "Twitch authentication and metadata go directly to Twitch. Your configured streaming source receives playback and authorized download requests, plus its own credentials. Twitch credentials are never sent to it. Twitch sign-in stays in device-only Keychain entries. With a provisioned iCloud build, sources including their access tokens, preferences, public app settings, recent searches and watch history sync through encrypted private CloudKit records. The offline sync journal is encrypted; imported source tokens enter the source Keychain. Downloads stay local. Viewing time is used locally to rank live channels. No analytics is collected. Chat history is held only in bounded memory.") }
                     NavigationLink("License & acknowledgments") { LegalView(title: "License", text: "Original Twitchy code is licensed under the MIT License. Copyright © 2026 Rafael Reverberi. Permission is granted to use, copy, modify, merge, publish, distribute, sublicense and sell copies subject to preserving the copyright and license notice. Software is provided AS IS without warranty. Uses Apple system frameworks; no third-party runtime packages. Twitchy is not affiliated with or endorsed by Twitch.") }
                     Link("Twitch Developer documentation", destination: URL(string: "https://dev.twitch.tv/docs/")!)
                 }

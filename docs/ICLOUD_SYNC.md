@@ -7,7 +7,7 @@ The private database uses zone `TwitchyPersonal`, record type `TwitchyValue`, an
 Sync includes:
 
 - Sources, source bearer tokens and selected source. Imported tokens enter the source-only Keychain.
-- Every playback, chat and appearance preference, public OAuth application settings, favorites, recent searches and onboarding state.
+- Every playback, chat and appearance preference, public OAuth application settings, recent searches and onboarding state.
 - Watch entries including VOD/clip resume positions and actual viewing sessions across devices.
 
 Twitch access/refresh tokens, chat messages and downloaded media/indexes remain on each device. Offline downloaded paths and source health data cannot be transferred meaningfully to another device.
@@ -20,4 +20,6 @@ Mutations queue in an AES-GCM encrypted local journal and retry automatically; t
 
 Automated tests cover two independent devices, encrypted journal persistence, source credential import and deletion, disjoint offline preference edits, additive viewing sessions, offline restart, seed/server precedence, deletion tombstones, history clearing and Apple-account separation. Helix batching and separate VOD positions are also tested. These tests use an injected deterministic cloud transport; they do not prove Apple CloudKit provisioning or a real multi-device round trip.
 
-The maintainer reported successful iCloud sync and launches on their devices on 2026-10-10. That report does not establish every merge/deletion scenario below. For independent verification with your own team/container: add an authenticated reachable source on Mac, sign in to Twitch separately on iPhone/iPad/Apple TV, confirm source playback on each, watch different channels offline, reconnect, check merged interests/resume positions, then remove a test favorite/source and confirm deletion on peers. Also check Production schema after deployment.
+The maintainer reported successful iCloud sync and launches on their devices on 2026-10-10. That report does not establish every merge/deletion scenario below. For independent verification with your own team/container: add an authenticated reachable source on Mac, sign in to Twitch separately on iPhone/iPad/Apple TV, confirm source playback on each, watch different channels offline, reconnect, check merged interests/resume positions, then remove a test source and confirm deletion on peers. Also check Production schema after deployment.
+
+Legacy favorite records remain readable for storage compatibility, but favorites are no longer exposed in any client.

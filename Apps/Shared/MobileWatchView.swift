@@ -2,12 +2,15 @@
 import SwiftUI
 import AVKit
 import TwitchyDesignSystem
+import TwitchyPlayback
 
 struct MobilePlaybackOverlay: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var controlsVisible = true
     @State private var panel = "Chat"
+    @State private var downloadNotice: String?
+    @State private var preparingDownload = false
     var body: some View {
         let mobile = model.mobile
         GeometryReader { geometry in
@@ -54,6 +57,9 @@ struct MobilePlaybackOverlay: View {
         }
         .ignoresSafeArea(edges: mobile.fullscreen ? .all : [])
         .allowsHitTesting(mobile.selection != nil)
+        .alert("Download", isPresented: Binding(get: { downloadNotice != nil }, set: { if !$0 { downloadNotice = nil } })) {
+            Button("OK") { downloadNotice = nil }
+        } message: { Text(downloadNotice ?? "") }
         .task(id: mobile.identity) { await mobile.loadWatchingProfile() }
         .onChange(of: mobile.identity) { _, _ in controlsVisible = true; panel = model.personal.data.preferences.showChat ? "Chat" : "Details" }
         .onChange(of: mobile.presentation) { _, _ in controlsVisible = true }
@@ -172,10 +178,37 @@ struct MobilePlaybackOverlay: View {
                     }
                 }.buttonStyle(.plain).accessibilityLabel("Open channel")
                 Spacer()
-                Button { model.mobile.openChannel() } label: { Image(systemName: "square.grid.2x2").frame(width: 44, height: 44) }
-                    .accessibilityLabel("Channel library").accessibilityIdentifier("watch.library")
+                Menu {
+                    Button("View channel", systemImage: "person.crop.circle") { model.mobile.openChannel() }
+                        .accessibilityIdentifier("watch.channelLibrary")
+                    if !model.isOfflinePlayback, let selection = model.mobile.selection, let id = selection.contentID, let type = selection.contentType,
+                       type == "vod" || type == "clip" {
+                        Button("Download", systemImage: "arrow.down.circle") {
+                            download(type: type, id: id)
+                        }.disabled(preparingDownload).accessibilityIdentifier("watch.download")
+                    }
+                } label: { Image(systemName: "ellipsis").font(.system(size: 20, weight: .semibold)).frame(width: 44, height: 44) }
+                    .accessibilityLabel("Stream options").accessibilityIdentifier("watch.options")
             }
         }.padding(.horizontal, 16).padding(.vertical, 14).background(Color(uiColor: .systemBackground))
+    }
+    private func download(type: String, id: String) {
+        guard ["vod", "clip"].contains(type), !preparingDownload else { return }
+        preparingDownload = true
+        let metadata = DownloadMetadata(title: model.mobile.title, channel: model.mobile.selection?.name, thumbnailURL: model.mobile.thumbnailURL, duration: model.mobile.duration)
+        Task {
+            defer { preparingDownload = false }
+            do {
+                let client = try model.sources.client()
+                let capabilities = try await client.capabilities()
+                guard capabilities.downloads, capabilities.clientSideDownloads == true else {
+                    downloadNotice = "Your streaming source does not support downloads for this content."
+                    return
+                }
+                await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: metadata)
+                downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback."
+            } catch { downloadNotice = error.localizedDescription }
+        }
     }
     private var panelHeader: some View {
         HStack(spacing: 20) {

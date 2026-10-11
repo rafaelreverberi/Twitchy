@@ -46,7 +46,6 @@ enum TVFixtures {
         model.channels = decode(#"[{"broadcaster_id":"tv-0","broadcaster_login":"fixture0","broadcaster_name":"Northern Lights","followed_at":"2026-10-01T00:00:00Z"},{"broadcaster_id":"offline","broadcaster_login":"offline","broadcaster_name":"Offline channel","followed_at":"2026-10-01T00:00:00Z"}]"#)
         model.personal.recordViewing(WatchSession(login: "fixture0", seconds: 30))
         model.personal.recordViewing(WatchSession(login: "fixture1", seconds: 240))
-        model.personal.data.favorites = ["fixture"]
         model.personal.watched(.init(login: "fixture", title: "Northern Lights"))
         let source = StreamingSource(name: "Local TV fixture", baseURL: URL(string: "http://localhost:8181")!, allowLocalHTTP: true)
         try? model.sources.upsert(source)

@@ -83,3 +83,29 @@ The tested iOS 27 simulator reports PiP as unsupported. Its background-return
 and session-preservation checks pass, but real automatic PiP must be tested on
 a physical iPhone. Live Twitch chat, real source failures and long-running
 buffering also require an actual Twitch account/source.
+
+## Playback options (2026-10-11)
+
+The button next to the channel name is now an ellipsis menu. View channel opens the existing channel library without replacing playback. Download is offered for VODs and clips, never live streams; the configured source must support client-side downloads. Queue results and errors are shown in a confirmation alert, and progress is available under Downloads. Favorites/star actions and sections have been removed across iPhone, Mac and Apple TV. Apple TV also no longer has the star/Library sidebar item. Follow/unfollow actions are omitted: Twitch no longer provides a supported API to change follows, and no additional OAuth scopes are requested.
+
+Validation: all 53 package tests and macOS/iOS Simulator/tvOS Simulator builds passed. The focused iPhone UI test passed through Live → View channel → Video → View channel → Clip and verified that Download is absent for live content and present for VODs/clips. The Apple TV screen test passed across onboarding, Home, Channels, Search, Settings and channel views, checking that Library/Favorites/Add favorite/Remove favorite are absent. The new player-menu download action was not exercised against a real configured source in this pass.
+
+## Download cards and library sorting (2026-10-11)
+
+Downloads are started from a video or clip menu. The Downloads destination no longer has a manual content-ID/type/authorization form. Cards retain the content title, channel, duration and thumbnail; artwork is cached locally, with a video-frame fallback for completed downloads. Mac uses compact horizontal cards and iPhone uses full-width artwork. Transfers show a progress bar, downloaded/total/remaining bytes and an estimated remaining time in minutes when the source supplies a total size and measured transfer speed is available. Unknown sizes or stalled transfers display an estimating state. Completed downloads offer offline playback; interrupted downloads offer retry/removal, and active transfers offer cancellation.
+
+The complete padded area of the Mac library tabs is clickable, both in Channel library and More from. iPhone offers Most recent / Most viewed in the channel ellipsis menu; the selected order survives tab changes and pagination. Recent clips use the same last-30-days window as Mac. Apple TV still has no persistent downloads UI.
+
+Validation: 54 package tests passed, including metadata restoration, real fixture transfer, local poster caching, deletion and ETA conditions. All three platform builds passed. iPhone UI assertions passed for sorting, keeping the selected order on Clips, the empty Downloads state without manual fields, and recorded-only Download menus. Mac tab-padding clicks were verified against a live channel; preparing/completed download cards were inspected in a separate temporary app copy with isolated personal/source/download storage and cloud transport disabled. Real-source downloads and populated iPhone download cards were not live-tested.
+
+## Offline playback and interaction fixes (2026-10-11)
+
+Offline media now uses the retained app player, normal watch view, playback controls, seeking and fullscreen, rather than a separate AVKit sheet. No source session or chat connection is created for local playback; the chat panel says “Chat could not be loaded because we are offline.” Source changes do not interrupt a local movie. Source session cleanup is asynchronous, so an unreachable server cannot delay stopping or opening another video.
+
+A stored 60-second clip reproduced the reported duration problem: FFprobe found 60 seconds of media while AVFoundation exposed only the initial 2.082-second fragment. OfflineMP4 rebuilds complete sample tables from the fragments, retaining media bytes and atomically replacing the original only after AVFoundation validation. It runs off the main actor, validates byte ranges, limits metadata/sample allocations and checks a known expected duration. New downloads are indexed before completion; existing fragmented downloads are repaired when opened. A truncated or obviously short file offers retry instead of being treated as completed.
+
+The Mac double-click surface now sits above the full-height controls container while excluding the control bar. Manual testing confirmed fullscreen entry/exit without pausing. macOS has one search toolbar button outside Search and no top Settings button; Search has neither application toolbar action.
+
+Validation: 60 package tests passed, including a copy of the actual 60-second clip and frame retrieval at second 55, an eight-second synthetic A/V movie, truncation preservation, duration checks and nonblocking cleanup. macOS, iOS Simulator and tvOS Simulator builds passed. The iPhone simulator UI test passed through Downloads → Play offline → normal player → fullscreen → watch view, checking the offline chat message, absence of a sheet and unchanged source-session request count. Real Mac offline playback showed a one-minute timeline and continued past the first fragment; both double-click directions and toolbar actions across Home/Channels/Profile/Search were checked. A physical iPhone was not tested.
+
+The currently unresponsive Mac process was OS-stopped (process state T). Xcode’s console recorded that its LLDB RPC server had been killed while detaching. SIGCONT restored immediate app/UI responsiveness. This diagnoses that observed freeze; it does not establish that every past intermittent freeze had the same cause. A corrected Mac build was then launched without Xcode’s debugger.

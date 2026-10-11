@@ -51,7 +51,6 @@ struct RootView: View {
         #if !os(tvOS)
         .sheet(isPresented: $model.showingSettings) { SettingsView().environment(model) }
         .sheet(isPresented: Binding(get: { !model.personal.data.onboardingComplete }, set: { if !$0 { model.personal.data.onboardingComplete = true } })) { WelcomeView().environment(model) }
-        .sheet(isPresented: Binding(get: { model.localPlayback != nil }, set: { if !$0 { model.localPlayback = nil } })) { if let url = model.localPlayback { OfflinePlayer(url: url) } }
         #endif
         .onChange(of: scenePhase) { _, phase in
             #if os(iOS)
@@ -87,7 +86,7 @@ struct RootView: View {
         .onChange(of: model.auth.session?.accessToken) { _, _ in Task { await model.refresh() } }
         .onChange(of: model.sources.active?.baseURL) { _, _ in
             #if os(macOS)
-            model.stopDesktopPlayback()
+            if !model.isOfflinePlayback { model.stopDesktopPlayback() }
             #elseif os(iOS)
             model.mobile.sourceChanged()
             #else
@@ -97,7 +96,7 @@ struct RootView: View {
         .onChange(of: model.sources.activeID) { _, _ in
             model.personal.data.preferences.preferredQuality = "auto"
             #if os(macOS)
-            model.stopDesktopPlayback()
+            if !model.isOfflinePlayback { model.stopDesktopPlayback() }
             #elseif os(iOS)
             model.mobile.sourceChanged()
             #else
@@ -133,19 +132,35 @@ struct RootView: View {
             NavigationStack {
                 Group {
                     if let selection = model.selectedChannel {
-                        ChannelDetail(selection: selection).id(selection.id)
+                        if let item = model.offlineDownload, selection.offlineDownloadID == item.id { DesktopOfflineWatchView(item: item) }
+                        else { ChannelDetail(selection: selection).id(selection.id) }
                     } else if destination == .home || destination == nil {
                         MacHomeView()
                     } else { screen(destination!) }
                 }
                 .toolbar {
+                    if destination != .search || model.selectedChannel != nil {
                     ToolbarItem(placement: .automatic) {
                         Button { model.selectedChannel = nil; destination = .search } label: {
                             Label("Search streamers, games or categories", systemImage: "magnifyingglass")
                         }.keyboardShortcut("k", modifiers: .command).accessibilityIdentifier("search.open")
                     }
+                    }
                 }
             }
+        }
+        .accessibilityHidden(model.desktopFullscreen)
+        .allowsHitTesting(!model.desktopFullscreen)
+        .overlay {
+            if model.desktopFullscreen {
+                DesktopWatchPlayer(theater: Binding(get: { model.desktopTheater }, set: { model.desktopTheater = $0 }), fullscreenPresentation: true)
+                    .background(.black).ignoresSafeArea()
+            }
+        }
+        .toolbar(model.desktopFullscreen ? .hidden : .automatic, for: .windowToolbar)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window === model.desktopPlayerSurface.view.window else { return }
+            model.desktopFullscreen = false
         }
         .onChange(of: destination) { _, _ in model.selectedChannel = nil }
         .frame(minWidth: 940, minHeight: 640)
@@ -178,7 +193,9 @@ struct RootView: View {
         Group {
             switch item { case .home: HomeView(); case .channels: ChannelsView(); case .search: SearchView(); case .downloads: DownloadsView(); case .profile: ProfileView() }
         }.navigationTitle(item.rawValue)
+        #if !os(macOS)
         .toolbar { ToolbarItem { Button { model.showingSettings = true } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings").accessibilityIdentifier("settings.open") } }
+        #endif
     }
 }
 struct WelcomeView: View {
@@ -217,7 +234,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 8) { Text("Your live lineup").font(.title.bold()); Text("Your favorites. New discoveries.").foregroundStyle(.secondary) }; Spacer(); if model.loading { ProgressView() } else { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh streams") } }
+                HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 8) { Text("Your live lineup").font(.title.bold()); Text("Your channels. New discoveries.").foregroundStyle(.secondary) }; Spacer(); if model.loading { ProgressView() } else { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh streams") } }
                 if let error = model.error { Notice(error) }
                 if model.api == nil { LoginPrompt() }
                 else {
@@ -231,7 +248,6 @@ struct HomeView: View {
                     #endif
                     if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
-                    if !model.personal.data.favorites.isEmpty { localSection("Favorites", logins: model.personal.data.favorites) }
                     let resumable = model.personal.data.history.filter { $0.contentID != nil && $0.position > 0 }
                     if !resumable.isEmpty {
                         Text("Continue Watching").font(.title2.bold())
@@ -299,7 +315,7 @@ struct ChannelsView: View {
                     ForEach(model.channels.filter { filter.isEmpty || $0.broadcasterName.localizedCaseInsensitiveContains(filter) }) { channel in
                         let live = model.followedStreams.first { $0.userId == channel.id }
                         Button { model.open(login: channel.broadcasterLogin, name: channel.broadcasterName, id: channel.id) } label: {
-                            HStack { RemoteImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 44, height: 44).clipShape(Circle()); VStack(alignment: .leading) { Text(channel.broadcasterName).font(.headline); Text(live?.gameName ?? "Offline").font(.caption).foregroundStyle(.secondary) }; Spacer(); if let live { Text("LIVE · \(live.viewerCount.formatted())").font(.caption.bold()).foregroundStyle(TwitchyTheme.live) }; if model.personal.data.favorites.contains(channel.broadcasterLogin) { Image(systemName: "star.fill").foregroundStyle(TwitchyTheme.accent) } }
+                            HStack { RemoteImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 44, height: 44).clipShape(Circle()); VStack(alignment: .leading) { Text(channel.broadcasterName).font(.headline); Text(live?.gameName ?? "Offline").font(.caption).foregroundStyle(.secondary) }; Spacer(); if let live { Text("LIVE · \(live.viewerCount.formatted())").font(.caption.bold()).foregroundStyle(TwitchyTheme.live) } }
                         }.buttonStyle(.plain).padding(.vertical, 6)
                     }
                     if model.channelsCursor != nil { Button("Load more channels") { Task { await model.moreChannels() } } }
@@ -316,10 +332,5 @@ struct CategoryDetail: View {
     @State private var error: String?
     var body: some View { ScrollView { VStack(alignment: .leading) { if let error { Notice(error) }; StreamSection(title: category.name, streams: streams); if cursor != nil { Button("Load more") { Task { await load(more: true) } } } }.padding(24) }.navigationTitle(category.name).task { await load(more: false) } }
     private func load(more: Bool) async { do { guard let api = model.api else { return }; let page = try await api.streams(gameID: category.id, after: more ? cursor : nil); streams = more ? streams + page.data : page.data; cursor = page.pagination?.cursor } catch { self.error = error.localizedDescription } }
-}
-struct OfflinePlayer: View {
-    let url: URL
-    @State private var player = AVPlayer()
-    var body: some View { VideoPlayer(player: player).frame(minWidth: 300, minHeight: 240).onAppear { player.replaceCurrentItem(with: AVPlayerItem(url: url)); player.play() }.onDisappear { player.pause(); player.replaceCurrentItem(with: nil) } }
 }
 #Preview { RootView().environment(AppModel()) }
