@@ -103,7 +103,7 @@ public struct PersonalData: Codable, Sendable {
             if FileManager.default.fileExists(atPath: url.path) { data = try JSONDecoder().decode(PersonalData.self, from: Data(contentsOf: url)) }
         } catch { self.error = "Saved preferences could not be read. The existing file has been preserved." }
     }
-    public static var defaultURL: URL { URL.applicationSupportDirectory.appendingPathComponent("Twitchy/personal.json") }
+    public static var defaultURL: URL { TwitchyStoragePaths.directory.appendingPathComponent("personal.json") }
     private func save() {
         do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(data).write(to: url, options: .atomic); error = nil }
         catch { self.error = "Your preferences could not be saved. \(error.localizedDescription)" }
@@ -127,4 +127,15 @@ public struct PersonalData: Codable, Sendable {
     }
     public func clearHistory() { data.history = []; data.watchSessions = []; data.historyClearedAt = .now }
     public func searched(_ text: String) { guard !text.isEmpty else { return }; data.recentSearches.removeAll { $0 == text }; data.recentSearches.insert(text, at: 0); data.recentSearches = Array(data.recentSearches.prefix(20)) }
+}
+
+/// tvOS permits writable files in Caches. CloudKit restores evicted data; credentials stay in Keychain.
+public enum TwitchyStoragePaths {
+    public static var directory: URL {
+        #if os(tvOS)
+        URL.cachesDirectory.appendingPathComponent("Twitchy", isDirectory: true)
+        #else
+        URL.applicationSupportDirectory.appendingPathComponent("Twitchy", isDirectory: true)
+        #endif
+    }
 }

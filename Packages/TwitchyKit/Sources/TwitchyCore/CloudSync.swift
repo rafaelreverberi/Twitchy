@@ -110,7 +110,7 @@ public actor PrivateCloudTransport: CloudSyncTransport {
     @ObservationIgnored private var debounce: Task<Void, Never>?
     @ObservationIgnored private var storageFailed = false
     private struct Journal: Codable { var values: [String: SyncValue]; var dirty: Set<String>; var account: String? }
-    public init(transport: (any CloudSyncTransport)?, file: URL = URL.applicationSupportDirectory.appendingPathComponent("Twitchy/sync.sealed"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sync")) {
+    public init(transport: (any CloudSyncTransport)?, file: URL = TwitchyStoragePaths.directory.appendingPathComponent("sync.sealed"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sync")) {
         self.transport = transport; self.file = file; self.secrets = secrets
         do {
             if let raw = try secrets.read("cacheKey") { cacheKey = SymmetricKey(data: raw) }

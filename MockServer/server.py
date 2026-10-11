@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic localhost fixture. No Twitch extraction, Linux backend, or proxy."""
-import argparse, json, re, threading
+import argparse, json, re, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -15,6 +15,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path=urlsplit(self.path).path
         if path=='/__test__/metrics':return self.send_json(200,dict(session_requests=self.server.session_requests,session_creations=self.server.session_creations,session_deletions=self.server.session_deletions))
+        if path=='/__test__/playback-quality':return self.send_json(200,dict(quality=self.server.last_requested_quality))
         if path=='/v1/health': return self.send_json(200,dict(status='ok',server_version='mock-1.0.0',api_version='v1'))
         if path=='/v1/capabilities': return self.send_json(200,CAPS)
         if path=='/v1/downloads/fixture-download': return self.send_json(200,self.job())
@@ -34,9 +35,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/v1/playback/sessions':
             with self.server.counter_lock:
                 self.server.session_requests+=1
+                self.server.last_requested_quality=body.get("requested_quality")
                 login=body.get('channel_login','')
                 attempt=self.server.channel_attempts.get(login,0)+1
                 self.server.channel_attempts[login]=attempt
+            if login=='fixture-slow':time.sleep(15)
             if login.startswith('fixture-transient') and attempt==1:return self.problem(503,'source_busy',retryable=True)
             if login=='fixture-unavailable':return self.problem(404,'stream_unavailable')
             if body.get('content_type') not in ['live','vod','clip']:return self.problem(400,'invalid_content_type')
@@ -59,5 +62,5 @@ if __name__=='__main__':
     MEDIA=args.media_dir.resolve()
     print(f'Twitchy MOCK fixture only: http://localhost:{args.port}',flush=True)
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
-    server.counter_lock=threading.Lock();server.session_requests=0;server.channel_attempts={};server.session_creations=0;server.session_deletions=0;server.unique_sessions=args.unique_sessions
+    server.counter_lock=threading.Lock();server.session_requests=0;server.channel_attempts={};server.session_creations=0;server.session_deletions=0;server.unique_sessions=args.unique_sessions;server.last_requested_quality=None
     server.serve_forever()

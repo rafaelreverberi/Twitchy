@@ -19,13 +19,13 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 
 | Feature | Status | Boundary |
 |---|---|---|
-| Five primary destinations and native adaptive navigation | Implemented | Home, Channels, Search, Downloads, Profile |
+| Five primary destinations and native adaptive navigation | Implemented | iPhone/Mac: Home, Channels, Search, Downloads, Profile. Apple TV: Home, Channels, Search, Library, Settings |
 | macOS Home, channel pages and dedicated watching layout | Implemented | Featured live stream, channel banner/about, paginated videos/broadcasts/clips, fixed chat column, theater mode, native sidebar and persistent Now Playing mini-player; [details](docs/MACOS_INTERFACE.md) |
 | Dark design system, original icon, onboarding | Implemented | Real captures below; no fake stream data |
 | Official Helix profile, streams, follows and search | Implemented | Live account testing needs a registered Client ID |
 | Pagination, bounded cache and safe GET backoff | Implemented | Channel/stream/search/category pagination; macOS channel libraries also paginate VODs, broadcasts and clips |
 | System browser OAuth with state validation | Implemented | Must configure a registered callback; no PKCE assumption |
-| Public Device Flow and rotating refresh token | Implemented | Default sign-in; bundled Public Client ID; Apple TV runtime not available locally |
+| Public Device Flow and rotating refresh token | Implemented | Default sign-in; bundled Public Client ID; Apple TV QR/code request and remote UI checked in Simulator; real consent remains unverified |
 | Device-only Keychain and startup/hourly validation | Implemented | Unit-tested identity/expiry/revocation; real OAuth pending |
 | Multiple sources, editing, disabling, switching, discovery | Implemented | Explicit HTTPS or private local-development HTTP |
 | AVPlayer HLS, native controls, fullscreen, quality, PiP | Implemented | Local generated HLS fixture tested; real source pending |
@@ -41,7 +41,7 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 | Emote/subscription metadata APIs | Partially implemented | Typed endpoints; subscription UI/additional scope opt-in planned |
 | iCloud sync | Implemented; own provisioning required | Sources + credentials, preferences, favorites, searches and history; encrypted private CloudKit records. See [setup](docs/ICLOUD_SYNC.md). |
 | Dedicated macOS chat window / resizable iPad divider | Planned | Responsive side-by-side layout is implemented |
-| tvOS navigation and device sign-in | Partially implemented | Builds against tvOS SDK; remote interaction not live tested |
+| tvOS navigation and device sign-in | Implemented | Dedicated full-screen TV views, QR onboarding, personalized featured streams and fullscreen-only playback without chat, Siri Remote simulator tests, and writable cache storage. [TV interface and verification](docs/TVOS_INTERFACE.md); physical-device/account validation remains open |
 | Server acquisition / ad filtering | Unsupported in client | Separate backend responsibility, subject to Twitch policies |
 
 ## Architecture
