@@ -79,13 +79,31 @@ targets:
     platform: tvOS
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.twitchy-tvos
-    sources: [Apps/Shared, Resources]
+      ASSETCATALOG_COMPILER_APPICON_NAME: TVBrand
+    sources: [Apps/Shared, Apps/tvOS/Assets.xcassets, Resources]
     info:
       path: Apps/tvOS/Info.plist
       properties:
         TwitchyCloudEnabled: true
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+    dependencies: *deps
+  TwitchyTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [Tests/tvOSUI]
+    settings:
+      PRODUCT_NAME: TwitchyTVUITests
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.TwitchyTVUITests
+    dependencies:
+      - target: Twitchy-tvOS
+  TwitchyTVStorageTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources: [Tests/tvOSUnit]
+    settings:
+      PRODUCT_NAME: TwitchyTVStorageTests
+      PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.TwitchyTVStorageTests
     dependencies: *deps
   TwitchyiOSUITests:
     type: bundle.ui-testing
@@ -122,3 +140,5 @@ schemes:
     build:
       targets:
         Twitchy-tvOS: all
+    test:
+      targets: [TwitchyTVUITests, TwitchyTVStorageTests]

@@ -31,13 +31,15 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, @unc
     private let directory: URL
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var transfers: [UUID: URLSessionDownloadTask] = [:]
-    public init(directory: URL = URL.applicationSupportDirectory.appendingPathComponent("Twitchy/Downloads")) {
+    public init(directory: URL = TwitchyStoragePaths.directory.appendingPathComponent("Downloads")) {
         self.directory = directory
+        #if !os(tvOS)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("index.json")
             if FileManager.default.fileExists(atPath: file.path) { items = try JSONDecoder().decode([LocalDownload].self, from: Data(contentsOf: file)); for index in items.indices where items[index].job.status == .transferring { items[index].job.status = .failed } }
         } catch { self.error = "Downloads could not be restored." }
+        #endif
     }
     public var storageBytes: Int64 { items.filter { $0.localFilename != nil }.reduce(0) { $0 + $1.job.transferredBytes } }
     public func file(for item: LocalDownload) -> URL? {

@@ -37,6 +37,27 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7F07B432FAA4C45B12567E32"
+               BuildableName = "TwitchyTVUITests.xctest"
+               BlueprintName = "TwitchyTVUITests"
+               ReferencedContainer = "container:Twitchy.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A3BDF7AE1E64025BE21AEDB9"
+               BuildableName = "TwitchyTVStorageTests.xctest"
+               BlueprintName = "TwitchyTVStorageTests"
+               ReferencedContainer = "container:Twitchy.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

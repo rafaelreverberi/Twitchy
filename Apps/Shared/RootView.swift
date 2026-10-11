@@ -20,7 +20,7 @@ struct RootView: View {
             #if os(macOS)
             macSplit
             #elseif os(tvOS)
-            tabs
+            TVRootView()
             #else
             MobileRootView()
             #endif
@@ -36,6 +36,9 @@ struct RootView: View {
             #if os(iOS)
             guard !model.isMobileFixture else { return }
             #endif
+            #if os(tvOS)
+            guard !TVFixtures.enabled else { return }
+            #endif
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(45)); try Task.checkCancellation(); await model.sync.sync() }
                 catch { return }
@@ -45,12 +48,11 @@ struct RootView: View {
         .onChange(of: model.playback.isPaused) { _, _ in model.sampleViewing() }
         .onChange(of: model.playback.state) { _, _ in model.sampleViewing() }
         .task(id: model.personal.interests.map(\.login)) { await model.refreshInterests() }
+        #if !os(tvOS)
         .sheet(isPresented: $model.showingSettings) { SettingsView().environment(model) }
-        #if os(tvOS)
-        .sheet(item: $model.selectedChannel) { selection in ChannelDetail(selection: selection).environment(model) }
-        #endif
         .sheet(isPresented: Binding(get: { !model.personal.data.onboardingComplete }, set: { if !$0 { model.personal.data.onboardingComplete = true } })) { WelcomeView().environment(model) }
         .sheet(isPresented: Binding(get: { model.localPlayback != nil }, set: { if !$0 { model.localPlayback = nil } })) { if let url = model.localPlayback { OfflinePlayer(url: url) } }
+        #endif
         .onChange(of: scenePhase) { _, phase in
             #if os(iOS)
             if phase == .active { model.mobile.enterForeground() }
@@ -58,6 +60,9 @@ struct RootView: View {
             if phase == .active { Task {
                 #if os(iOS)
                 guard !model.isMobileFixture else { return }
+                #endif
+                #if os(tvOS)
+                guard !TVFixtures.enabled else { return }
                 #endif
                 await model.sync.sync(); await model.refreshInterests(); do { try await model.auth.validate() } catch { model.error = error.localizedDescription }
             } }

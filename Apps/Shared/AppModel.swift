@@ -9,15 +9,24 @@ import AVKit
 
 @MainActor @Observable final class AppModel {
     let auth = TwitchAuthManager()
+    #if DEBUG && os(tvOS) && targetEnvironment(simulator)
+    let sources = StreamingSourceManager(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-sources-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: TVFixtures.sourceSecrets)
+    #else
     let sources = StreamingSourceManager()
+    #endif
     #if DEBUG && os(iOS) && targetEnvironment(simulator)
     let personal = PersonalStore(url: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("Twitchy-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
+    #elseif DEBUG && os(tvOS) && targetEnvironment(simulator)
+    let personal = PersonalStore(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-personal-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #else
     let personal = PersonalStore()
     #endif
     let playback = PlaybackController()
     let chat = ChatController()
     let downloads = DownloadManager()
+    #if os(tvOS)
+    var startupComplete = false
+    #endif
     #if os(iOS)
     var isMobileFixture: Bool {
         #if DEBUG && targetEnvironment(simulator)
@@ -29,7 +38,13 @@ import AVKit
     var startupComplete = false
     @ObservationIgnored lazy var mobile = MobilePlaybackCoordinator(model: self)
     #endif
-    @ObservationIgnored lazy var sync = AppDataSync(personal: personal, sources: sources, cloud: CloudSyncStore(transport: PrivateCloudTransport.isConfigured ? PrivateCloudTransport() : nil))
+    @ObservationIgnored lazy var sync = AppDataSync(personal: personal, sources: sources, cloud: makeCloudStore())
+    private func makeCloudStore() -> CloudSyncStore {
+        #if DEBUG && os(tvOS) && targetEnvironment(simulator)
+        if TVFixtures.enabled { return CloudSyncStore(transport: nil, file: URL.temporaryDirectory.appendingPathComponent("TV-sync-" + UUID().uuidString), secrets: TVFixtureSecrets()) }
+        #endif
+        return CloudSyncStore(transport: PrivateCloudTransport.isConfigured ? PrivateCloudTransport() : nil)
+    }
     @ObservationIgnored private var syncStarted = false
     @ObservationIgnored private var applyingOAuthSettings = false
     @ObservationIgnored private var viewingLogin: String?
@@ -153,6 +168,12 @@ import AVKit
     }
     var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async {
+        #if os(tvOS)
+        defer { startupComplete = true }
+        #endif
+        #if DEBUG && os(tvOS) && targetEnvironment(simulator)
+        if TVFixtures.enabled { TVFixtures.load(self); return }
+        #endif
         #if os(iOS)
         defer { startupComplete = true }
         #endif
@@ -179,8 +200,15 @@ import AVKit
         await refresh()
     }
     func login(chat: Bool = false) async {
-        guard !auth.isSigningIn else { showingSettings = true; return }
+        guard !auth.isSigningIn else {
+            #if !os(tvOS)
+            showingSettings = true
+            #endif
+            return
+        }
+        #if !os(tvOS)
         showingSettings = true
+        #endif
         await auth.login(configuration: configuration, chat: chat)
         #if os(macOS)
         if let value = auth.deviceCode?.verificationUri, let url = URL(string: value), url.scheme == "https", url.host == "www.twitch.tv" || url.host == "twitch.tv" { NSWorkspace.shared.open(url) }
@@ -237,7 +265,7 @@ import AVKit
         do { let page = try await api.streams(after: cursor); let existing = Set(streams.map(\.id)); streams += page.data.filter { !existing.contains($0.id) }; streamsCursor = page.pagination?.cursor } catch { self.error = error.localizedDescription }
     }
     func open(login: String, name: String, id: String? = nil) { selectedChannel = .init(login: login, name: name, broadcasterID: id) }
-    func play(_ selection: ChannelSelection, contentType: String = "live", contentID: String? = nil) async {
+    func play(_ selection: ChannelSelection, contentType: String = "live", contentID: String? = nil, qualityOverride: String? = nil) async {
         #if os(iOS)
         guard !Task.isCancelled else { return }
         #endif
@@ -252,7 +280,7 @@ import AVKit
             client = try sources.client()
             #endif
             viewing = nil; viewingLogin = selection.login; wasPlaying = false; viewingTick = ProcessInfo.processInfo.systemUptime
-            await playback.start(client: client, request: .init(contentType: contentType, channelLogin: contentType == "live" ? selection.login : nil, contentId: contentID, requestedQuality: personal.data.preferences.preferredQuality))
+            await playback.start(client: client, request: .init(contentType: contentType, channelLogin: contentType == "live" ? selection.login : nil, contentId: contentID, requestedQuality: qualityOverride ?? personal.data.preferences.preferredQuality))
             #if os(iOS)
             guard !Task.isCancelled else { return }
             #endif

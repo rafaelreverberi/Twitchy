@@ -114,7 +114,7 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     @ObservationIgnored private var applyingRemote = false
     private let url: URL; private let secrets: any SecretStore
     private struct Saved: Codable { var sources: [StreamingSource]; var activeID: UUID? }
-    public init(url: URL = URL.applicationSupportDirectory.appendingPathComponent("Twitchy/sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources")) {
+    public init(url: URL = TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources")) {
         self.url = url; self.secrets = secrets
         do { if FileManager.default.fileExists(atPath: url.path) { let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: url)); sources = saved.sources; activeID = saved.activeID } } catch { self.error = "Saved sources could not be read." }
     }
