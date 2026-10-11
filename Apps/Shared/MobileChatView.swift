@@ -27,6 +27,7 @@ struct MobileChatView: View {
     }
     private var authorized: Bool { fixture || model.auth.session?.scopes.contains("user:read:chat") == true }
     var body: some View {
+        if model.isOfflinePlayback { OfflineChatNotice() } else {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -90,6 +91,7 @@ struct MobileChatView: View {
         .onChange(of: composing) { _, focused in model.mobile.isComposing = focused }
         .onChange(of: model.mobile.isComposing) { _, focused in if !focused { composing = false } }
         .onDisappear { composing = false; model.mobile.isComposing = false }
+    }
     }
     private func send() {
         guard let api = model.api, let session = model.auth.session, let id = model.mobile.selection?.broadcasterID,

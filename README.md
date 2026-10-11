@@ -19,7 +19,7 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 
 | Feature | Status | Boundary |
 |---|---|---|
-| Five primary destinations and native adaptive navigation | Implemented | iPhone/Mac: Home, Channels, Search, Downloads, Profile. Apple TV: Home, Channels, Search, Library, Settings |
+| Five primary destinations and native adaptive navigation | Implemented | iPhone/Mac: Home, Channels, Search, Downloads, Profile. Apple TV: Home, Channels, Search, Settings |
 | macOS Home, channel pages and dedicated watching layout | Implemented | Featured live stream, channel banner/about, paginated videos/broadcasts/clips, fixed chat column, theater mode, native sidebar and persistent Now Playing mini-player; [details](docs/MACOS_INTERFACE.md) |
 | Dark design system, original icon, onboarding | Implemented | Real captures below; no fake stream data |
 | Official Helix profile, streams, follows and search | Implemented | Live account testing needs a registered Client ID |
@@ -33,13 +33,13 @@ Development baseline: Xcode 27.0 (27A266a), Swift 6.4, SDK 27.0. Minimum deploym
 | Badges and Twitch emote fragments | Partially implemented | Native fragment layout; advanced wrapping, animated emotes and cheermotes need polish |
 | Authorized download jobs, progress, cancellation, retry, offline MP4 | Implemented | Local fixture transfer/persistence tested; no arbitrary media rights assumed |
 | Download pause/resume, background transfers, configurable location/concurrency | Planned | Foreground transfers only; retries restart transfers |
-| Favorites, history, recent searches, preferences | Implemented | Local atomic JSON persistence |
+| History, recent searches, preferences | Implemented | Local atomic JSON persistence |
 | VOD resume position / Continue Watching | Implemented | Bounded local history; playback position stored every ten seconds and on dismissal |
 | Recommended live streams | Implemented | Local ranking based on actual viewing duration and sessions; current live status comes from Helix. No Twitch personalized recommendation endpoint is used |
 | Search suggestions | Unsupported | No undocumented suggestion endpoint used |
 | Clips/VOD global free-text search and follow mutation | Unsupported | Channel-scoped metadata and official Twitch follow link |
 | Emote/subscription metadata APIs | Partially implemented | Typed endpoints; subscription UI/additional scope opt-in planned |
-| iCloud sync | Implemented; own provisioning required | Sources + credentials, preferences, favorites, searches and history; encrypted private CloudKit records. See [setup](docs/ICLOUD_SYNC.md). |
+| iCloud sync | Implemented; own provisioning required | Sources + credentials, preferences, searches and history; encrypted private CloudKit records. See [setup](docs/ICLOUD_SYNC.md). |
 | Dedicated macOS chat window / resizable iPad divider | Planned | Responsive side-by-side layout is implemented |
 | tvOS navigation and device sign-in | Implemented | Dedicated full-screen TV views, QR onboarding, personalized featured streams and fullscreen-only playback without chat, Siri Remote simulator tests, and writable cache storage. [TV interface and verification](docs/TVOS_INTERFACE.md); physical-device/account validation remains open |
 | Server acquisition / ad filtering | Unsupported in client | Separate backend responsibility, subject to Twitch policies |

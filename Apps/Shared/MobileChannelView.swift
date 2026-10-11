@@ -3,6 +3,7 @@ import SwiftUI
 import TwitchyAPI
 import TwitchyCore
 import TwitchyDesignSystem
+import TwitchyPlayback
 
 struct MobileRootView: View {
     @Environment(AppModel.self) private var model
@@ -96,6 +97,11 @@ struct MobileChannelView: View {
     @State private var loadingMore = false
     @State private var error: String?
     @State private var tab = "Videos"
+    @State private var libraryOrder = VideoSort.recent
+    @State private var libraryGeneration = UUID()
+    @State private var recentClipBefore: Date?
+    @State private var recentClipSince = Date.now
+    @State private var didAutoPlay = false
     @AppStorage("mobile.channel.grid") private var grid = false
     private var broadcasterID: String? { profile?.id ?? selection.broadcasterID }
     private var avatar: URL? { profile.flatMap { URL(string: $0.profileImageUrl) } ?? broadcasterID.flatMap { model.avatars[$0] } }
@@ -107,11 +113,14 @@ struct MobileChannelView: View {
                 VStack(alignment: .leading, spacing: 20) {
                 channelActions
                 libraryTabs
+                if tab != "About" {
+                    Text(libraryOrder == .recent ? (tab == "Clips" ? "Most recent · Last 30 days" : "Most recent") : "Most viewed")
+                        .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("channel.sortLabel")
+                }
                 if tab == "About" {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(profile?.description ?? "This channel hasn’t added a description.").font(.subheadline).foregroundStyle(.secondary)
                         if let live = channelLive { Text(live.title).font(.headline); Text(live.gameName).font(.subheadline).foregroundStyle(.secondary) }
-                        Link("Follow on Twitch", destination: URL(string: "https://www.twitch.tv/\(selection.login)")!)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 } else if loading || loadingSections.contains(tab) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -136,15 +145,21 @@ struct MobileChannelView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Picker("Sort by", selection: $libraryOrder) {
+                        Text("Most recent").tag(VideoSort.recent)
+                        Text("Most viewed").tag(VideoSort.views)
+                    }.pickerStyle(.inline)
+                    Divider()
                     Button(grid ? "List layout" : "Grid layout", systemImage: grid ? "list.bullet" : "square.grid.2x2") { grid.toggle() }
                     Link("Open on Twitch", destination: URL(string: "https://www.twitch.tv/\(selection.login)")!)
-                } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Channel options")
+                } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Channel options").accessibilityIdentifier("channel.options")
             }
         }
         .refreshable { await load() }
-        .task(id: selection.id) {
+        .task(id: selection.id.uuidString + "|" + libraryOrder.rawValue) {
             await load()
-            guard !Task.isCancelled, !selection.returnToPlayback else { return }
+            guard !Task.isCancelled, !selection.returnToPlayback, !didAutoPlay else { return }
+            didAutoPlay = true
             if let type = selection.contentType, let id = selection.contentID { watch(type: type, id: id, title: selection.name) }
         }
     }
@@ -177,9 +192,7 @@ struct MobileChannelView: View {
             } else if loading { ProgressView().frame(height: 36); Text("Loading channel…").font(.caption).foregroundStyle(.secondary) }
             else { Label("Offline", systemImage: "moon").font(.subheadline).foregroundStyle(.secondary) }
             Spacer(minLength: 0)
-            Button { model.personal.favorite(selection.login) } label: {
-                Image(systemName: model.personal.data.favorites.contains(selection.login) ? "star.fill" : "star").frame(width: 40, height: 40)
-            }.buttonStyle(.bordered).clipShape(Circle()).accessibilityLabel("Toggle favorite")
+
         }
     }
     private var libraryTabs: some View {
@@ -198,13 +211,13 @@ struct MobileChannelView: View {
     }
     @ViewBuilder private var libraryItems: some View {
         if tab == "Clips" {
-            ForEach(clips) { clip in videoRow(title: clip.title, thumbnail: clip.thumbnailUrl, detail: clip.broadcasterName, badge: "Clip", type: "clip", id: clip.id) }
+            ForEach(clips) { clip in videoRow(title: clip.title, thumbnail: clip.thumbnailUrl, detail: clip.broadcasterName, badge: clip.duration.map(clipDuration) ?? "Clip", type: "clip", id: clip.id) }
         } else {
             ForEach(tab == "Broadcasts" ? archives : videos) { video in videoRow(title: video.title, thumbnail: video.thumbnailUrl, detail: video.viewCount.map { "\($0.formatted()) views" } ?? selection.name, badge: video.duration, type: "vod", id: video.id) }
         }
     }
     private func videoRow(title: String, thumbnail: String, detail: String, badge: String, type: String, id: String) -> some View {
-        Button { watch(type: type, id: id, title: title) } label: {
+        Button { watch(type: type, id: id, title: title, thumbnail: thumbnail, duration: badge) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 RemoteImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "640").replacingOccurrences(of: "%{height}", with: "360")))
                     .aspectRatio(16 / 9, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -214,57 +227,122 @@ struct MobileChannelView: View {
             }
         }.buttonStyle(.plain)
         .contextMenu {
-            Button("Watch", systemImage: "play") { watch(type: type, id: id, title: title) }
+            Button("Watch", systemImage: "play") { watch(type: type, id: id, title: title, thumbnail: thumbnail, duration: badge) }
             if model.sources.active?.capabilities?.clientSideDownloads == true {
                 Button("Download", systemImage: "arrow.down.circle") { Task {
-                    do { await model.downloads.enqueue(client: try model.sources.client(), type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality) }
+                    do { await model.downloads.enqueue(client: try model.sources.client(), type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title, channel: selection.name, thumbnailURL: thumbnailURL(thumbnail), duration: badge)) }
                     catch { self.error = error.localizedDescription }
                 } }
             }
         }
     }
     private var empty: Bool { tab == "Clips" ? clips.isEmpty : tab == "Broadcasts" ? archives.isEmpty : videos.isEmpty }
-    private var hasMore: Bool { (tab == "Clips" ? clipCursor : tab == "Broadcasts" ? archiveCursor : videoCursor) != nil }
-    private func watch(type: String = "live", id: String? = nil, title: String? = nil) {
+    private var hasMore: Bool { (tab == "Clips" ? (libraryOrder == .recent ? recentClipBefore.map { _ in "recent" } : clipCursor) : tab == "Broadcasts" ? archiveCursor : videoCursor) != nil }
+    private func watch(type: String = "live", id: String? = nil, title: String? = nil, thumbnail: String? = nil, duration: String? = nil) {
         var channel = selection; channel.broadcasterID = broadcasterID
-        model.mobile.start(channel, type: type, id: id, title: title ?? channelLive?.title ?? info?.title, category: channelLive?.gameName ?? info?.gameName, avatar: avatar)
+        model.mobile.start(channel, type: type, id: id, title: title ?? channelLive?.title ?? info?.title, category: channelLive?.gameName ?? info?.gameName, avatar: avatar, thumbnailURL: thumbnail.flatMap { thumbnailURL($0) }, duration: duration)
+    }
+    private func clipDuration(_ duration: Double) -> String {
+        guard duration.isFinite, duration >= 0, duration < Double(Int32.max) else { return "Clip" }
+        let seconds = Int(duration.rounded())
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+    private func thumbnailURL(_ value: String) -> URL? {
+        URL(string: value.replacingOccurrences(of: "%{width}", with: "320").replacingOccurrences(of: "%{height}", with: "180"))
+    }
+    private func sortedVideos(_ values: [Video]) -> [Video] {
+        values.sorted {
+            if libraryOrder == .views, $0.viewCount != $1.viewCount { return ($0.viewCount ?? 0) > ($1.viewCount ?? 0) }
+            if $0.createdAt != $1.createdAt { return ($0.createdAt ?? "") > ($1.createdAt ?? "") }
+            return $0.id < $1.id
+        }
     }
     private func load() async {
-        loading = true; loadingSections = ["Videos", "Broadcasts", "Clips"]; error = nil; defer { loading = false; loadingSections = [] }
+        let generation = UUID(); libraryGeneration = generation
+        let order = libraryOrder
+        loading = true; loadingSections = ["Videos", "Broadcasts", "Clips"]; loadingMore = false; error = nil
+        videos = []; archives = []; clips = []
+        videoCursor = nil; archiveCursor = nil; clipCursor = nil; recentClipBefore = nil
+        defer { if generation == libraryGeneration { loading = false; loadingSections = [] } }
         #if DEBUG && targetEnvironment(simulator)
         if MobileFixtures.enabled {
             profile = MobileFixtures.profile; live = MobileFixtures.stream
-            videos = MobileFixtures.videos; archives = videos; clips = MobileFixtures.clips
+            videos = sortedVideos(MobileFixtures.videos); archives = videos; clips = MobileFixtures.clips
             model.mobile.updateChannel(login: selection.login, broadcasterID: profile?.id, avatar: avatar, category: live?.gameName)
             return
         }
         #endif
         guard let api = model.api else { error = "Sign in to Twitch to load this channel."; return }
         do {
-            profile = try await api.users(logins: [selection.login]).data.first
-            try Task.checkCancellation()
-            live = try await api.streams(login: selection.login).data.first
+            let profilePage = try await api.users(logins: [selection.login])
+            try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+            profile = profilePage.data.first
+            let livePage = try await api.streams(login: selection.login)
+            try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+            live = livePage.data.first
             guard let id = broadcasterID else { error = "This channel could not be found."; return }
             loading = false
             model.mobile.updateChannel(login: selection.login, broadcasterID: id, avatar: avatar, category: live?.gameName)
-            // A missing optional library must not remove the channel or live stream.
-            do { info = try await api.channel(id: id).data.first } catch is CancellationError { return } catch { }
-            do { let page = try await api.videos(userID: id); videos = page.data; videoCursor = page.pagination?.cursor } catch is CancellationError { return } catch { self.error = "Videos could not be loaded." }
+            do {
+                let page = try await api.channel(id: id)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                info = page.data.first
+            } catch is CancellationError { return } catch { }
+            do {
+                let page = try await api.videos(userID: id, sort: order)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                videos = sortedVideos(page.data); videoCursor = page.pagination?.cursor
+            } catch is CancellationError { return } catch { if generation == libraryGeneration { self.error = "Videos could not be loaded." } }
+            guard generation == libraryGeneration, !Task.isCancelled else { return }
             loadingSections.remove("Videos")
-            do { let page = try await api.videos(userID: id, type: "archive"); archives = page.data; archiveCursor = page.pagination?.cursor } catch is CancellationError { return } catch { self.error = "Broadcasts could not be loaded." }
+            do {
+                let page = try await api.videos(userID: id, type: "archive", sort: order)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                archives = sortedVideos(page.data); archiveCursor = page.pagination?.cursor
+            } catch is CancellationError { return } catch { if generation == libraryGeneration { self.error = "Broadcasts could not be loaded." } }
+            guard generation == libraryGeneration, !Task.isCancelled else { return }
             loadingSections.remove("Broadcasts")
-            do { let page = try await api.clips(broadcasterID: id); clips = page.data; clipCursor = page.pagination?.cursor } catch is CancellationError { return } catch { self.error = "Clips could not be loaded." }
+            do {
+                if order == .recent {
+                    let end = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970)), since = end.addingTimeInterval(-30 * 86400)
+                    let page = try await api.recentClips(broadcasterID: id, since: since, before: end)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    clips = page.data; recentClipBefore = page.nextBefore; recentClipSince = since
+                } else {
+                    let page = try await api.clips(broadcasterID: id)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    clips = page.data; clipCursor = page.pagination?.cursor
+                }
+            } catch is CancellationError { return } catch { if generation == libraryGeneration { self.error = "Clips could not be loaded." } }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if generation == libraryGeneration { self.error = error.localizedDescription } }
     }
     private func more() async {
-        guard let api = model.api, let id = broadcasterID else { return }
-        let selected = tab; loadingMore = true; defer { loadingMore = false }
+        guard !loadingMore, let api = model.api, let id = broadcasterID else { return }
+        let selected = tab, generation = libraryGeneration, order = libraryOrder
+        loadingMore = true
+        defer { if generation == libraryGeneration { loadingMore = false } }
         do {
-            if selected == "Clips", let cursor = clipCursor { let page = try await api.clips(broadcasterID: id, after: cursor); let existing = Set(clips.map(\.id)); clips += page.data.filter { !existing.contains($0.id) }; clipCursor = page.pagination?.cursor }
-            else if selected == "Broadcasts", let cursor = archiveCursor { let page = try await api.videos(userID: id, after: cursor, type: "archive"); let existing = Set(archives.map(\.id)); archives += page.data.filter { !existing.contains($0.id) }; archiveCursor = page.pagination?.cursor }
-            else if let cursor = videoCursor { let page = try await api.videos(userID: id, after: cursor); let existing = Set(videos.map(\.id)); videos += page.data.filter { !existing.contains($0.id) }; videoCursor = page.pagination?.cursor }
-        } catch { self.error = error.localizedDescription }
+            if selected == "Clips" {
+                let values: [Clip]
+                if order == .recent, let before = recentClipBefore {
+                    let page = try await api.recentClips(broadcasterID: id, since: recentClipSince, before: before)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    values = page.data; recentClipBefore = page.nextBefore
+                } else if let cursor = clipCursor {
+                    let page = try await api.clips(broadcasterID: id, after: cursor)
+                    try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                    values = page.data; clipCursor = page.pagination?.cursor
+                } else { return }
+                let existing = Set(clips.map(\.id)); clips += values.filter { !existing.contains($0.id) }
+            } else {
+                guard let cursor = selected == "Broadcasts" ? archiveCursor : videoCursor else { return }
+                let page = try await api.videos(userID: id, after: cursor, type: selected == "Broadcasts" ? "archive" : nil, sort: order)
+                try Task.checkCancellation(); guard generation == libraryGeneration else { return }
+                if selected == "Broadcasts" { let existing = Set(archives.map(\.id)); archives = sortedVideos(archives + page.data.filter { !existing.contains($0.id) }); archiveCursor = page.pagination?.cursor }
+                else { let existing = Set(videos.map(\.id)); videos = sortedVideos(videos + page.data.filter { !existing.contains($0.id) }); videoCursor = page.pagination?.cursor }
+            }
+        } catch { if generation == libraryGeneration && !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 #endif

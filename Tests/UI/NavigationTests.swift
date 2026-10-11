@@ -40,6 +40,53 @@ final class NavigationTests: XCTestCase {
         XCTAssertFalse(app.textFields["oauth.clientID"].exists, "Client configuration should stay in Advanced settings")
     }
     #if os(iOS)
+    @MainActor func testOfflineDownloadUsesTheNormalPlayerAndOfflineChat() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_PLAYBACK_FIXTURE"] = "1"
+        app.launchEnvironment["TWITCHY_UI_SEARCH_FIXTURE"] = "1"
+        app.launchEnvironment["TWITCHY_UI_OFFLINE_FIXTURE"] = "1"
+        let before = try metrics()
+        app.launch()
+        let downloads = app.tabBars.buttons["Downloads"]
+        XCTAssertTrue(downloads.waitForExistence(timeout: 15)); downloads.tap()
+        let play = app.buttons["download.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 10)); play.tap()
+        let video = app.otherElements["watch.video"]
+        XCTAssertTrue(video.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "value BEGINSWITH 'playing|'"), evaluatedWith: video)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(app.staticTexts["Chat could not be loaded because we are offline."].exists)
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        if !app.buttons["watch.fullscreen"].isHittable { video.tap() }
+        XCTAssertTrue(app.buttons["watch.fullscreen"].waitForExistence(timeout: 5))
+        app.buttons["watch.fullscreen"].tap()
+        app.buttons["watch.close"].tap()
+        XCTAssertTrue(app.staticTexts["Chat could not be loaded because we are offline."].waitForExistence(timeout: 5))
+        XCTAssertEqual(try metrics()["session_requests"], before["session_requests"])
+        capture("Offline playback in normal player")
+    }
+    @MainActor func testChannelSortingAndDownloadsEmptyState() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_PLAYBACK_FIXTURE"] = "1"
+        app.launch()
+        let options = app.buttons["channel.options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 10))
+        options.tap()
+        app.buttons["Most viewed"].tap()
+        XCTAssertTrue(app.staticTexts["channel.sortLabel"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["channel.sortLabel"].label, "Most viewed")
+        app.buttons["Clips"].tap()
+        XCTAssertEqual(app.staticTexts["channel.sortLabel"].label, "Most viewed")
+        options.tap()
+        app.buttons["Most recent"].tap()
+        XCTAssertEqual(app.staticTexts["channel.sortLabel"].label, "Most recent · Last 30 days")
+        capture("Channel sorting")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.tabBars.buttons["Downloads"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Take a video with you")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields.count, 0, "Downloads are started from content menus, never a manual ID form")
+        capture("Downloads empty state")
+    }
     @MainActor func testNativeSearchTitleSurvivesChannelReturn() {
         let app = XCUIApplication()
         app.launchEnvironment["TWITCHY_UI_PLAYBACK_FIXTURE"] = "1"
@@ -74,6 +121,38 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         XCTAssertTrue(title.exists)
         XCTAssertLessThan(title.frame.maxY, field.frame.minY)
+    }
+    @MainActor func testPlaybackOptionsOfferDownloadsOnlyForRecordedContent() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_PLAYBACK_FIXTURE"] = "1"
+        app.launch()
+        let live = app.buttons["channel.watchLive"]
+        XCTAssertTrue(live.waitForExistence(timeout: 10))
+        live.tap()
+        let options = app.buttons["watch.options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 10))
+        options.tap()
+        XCTAssertFalse(app.buttons["Download"].exists, "Live streams must not offer Download")
+        XCTAssertFalse(app.buttons["Follow"].exists)
+        XCTAssertFalse(app.buttons["Unfollow"].exists)
+        app.buttons["View channel"].tap()
+        let video = app.buttons.containing(.staticText, identifier: "Building something together").firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 10))
+        video.tap()
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        XCTAssertTrue(app.buttons["Download"].waitForExistence(timeout: 5), "Past streams must offer Download")
+        app.buttons["View channel"].tap()
+        XCTAssertTrue(app.buttons["nowPlaying.open"].waitForExistence(timeout: 5))
+        capture("Channel after recorded playback")
+        app.buttons["Clips"].tap()
+        let clip = app.buttons.containing(.staticText, identifier: "That was close!").firstMatch
+        XCTAssertTrue(clip.waitForExistence(timeout: 5))
+        clip.tap()
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        XCTAssertTrue(app.buttons["Download"].waitForExistence(timeout: 5), "Clips must offer Download")
+        capture("Recorded-content options")
     }
     private func metrics() throws -> [String: Int] {
         let data = try Data(contentsOf: URL(string: "http://localhost:8181/__test__/metrics")!)
@@ -136,28 +215,29 @@ final class NavigationTests: XCTestCase {
         if !exit.isHittable { video.tap() }
         exit.tap()
         XCUIDevice.shared.orientation = .portrait
-        XCTAssertTrue(app.buttons["watch.library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["watch.options"].waitForExistence(timeout: 5))
         app.buttons["watch.details"].tap()
         app.buttons["watch.chat"].tap()
         XCTAssertEqual(playbackKey(video), key)
-        app.buttons["watch.library"].tap()
+        app.buttons["watch.options"].tap()
+        app.buttons["View channel"].tap()
         XCTAssertTrue(watch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nowPlaying.open"].exists)
         XCTAssertEqual(playbackKey(video), key)
         watch.tap()
-        XCTAssertTrue(app.buttons["watch.library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["watch.options"].waitForExistence(timeout: 5))
         XCTAssertEqual(playbackKey(video), key, "Opening the same stream must preserve AVPlayerItem and session")
         video.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).press(forDuration: 0.1, thenDragTo: video.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
         XCTAssertTrue(app.buttons["nowPlaying.open"].waitForExistence(timeout: 5))
         app.buttons["nowPlaying.open"].tap()
-        XCTAssertTrue(app.buttons["watch.library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["watch.options"].waitForExistence(timeout: 5))
         XCTAssertEqual(playbackKey(video), key)
         let beforePiP = (video.value as? String ?? "").components(separatedBy: "|")
         XCUIDevice.shared.press(.home)
         Thread.sleep(forTimeInterval: 2)
         capture("iPhone automatic background PiP")
         app.activate()
-        XCTAssertTrue(app.buttons["watch.library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["watch.options"].waitForExistence(timeout: 5))
         XCTAssertEqual(playbackKey(video), key, "Background/PiP transitions must not recreate playback")
         let afterPiP = (video.value as? String ?? "").components(separatedBy: "|")
         print("PiP capabilities before background:", beforePiP.suffix(3))

@@ -12,6 +12,8 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     public let player = AVPlayer()
     public private(set) var state: PlayerState = .idle
     public private(set) var session: PlaybackSession?
+    public private(set) var localFile: URL?
+    public var isOffline: Bool { localFile != nil }
     public private(set) var error: String?
     public private(set) var quality = "auto"
     public var qualityLabel: String { session?.qualityLabel(requested: quality) ?? (quality == "auto" ? "Best" : quality) }
@@ -23,6 +25,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     #endif
     private var client: StreamingSourceClient?
     private var request: PlaybackRequest?
+    private var offlineExpectedDuration: Double?
     public var currentRequest: PlaybackRequest? { request }
     private var observation: NSKeyValueObservation?
     private var muteObservation: NSKeyValueObservation?
@@ -36,7 +39,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 isPaused = value == .paused
-                guard session != nil else { return }
+                guard session != nil || localFile != nil else { return }
                 #if os(iOS)
                 guard player.timeControlStatus == value, player.currentItem != nil else { return }
                 #endif
@@ -55,11 +58,36 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         }
     }
     public func togglePlayPause() {
-        guard session != nil, player.currentItem != nil else { return }
+        guard session != nil || localFile != nil, player.currentItem != nil else { return }
         if player.timeControlStatus == .paused { player.play(); isPaused = false }
         else { player.pause(); isPaused = true }
     }
     public func toggleMute() { player.isMuted.toggle(); isMuted = player.isMuted }
+    public func startOffline(url: URL, type: String, contentID: String, expectedDuration: Double? = nil) async {
+        let current = UUID()
+        await reset(nextState: .loading, generationID: current)
+        guard generation == current, !Task.isCancelled else { return }
+        localFile = url; request = .init(contentType: type, contentId: contentID, requestedQuality: "auto")
+        offlineExpectedDuration = expectedDuration
+        do {
+            guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { throw ClientError.message("The downloaded video is missing. Download it again.") }
+            try await OfflineMP4.prepare(url, expectedDuration: expectedDuration)
+            guard generation == current, !Task.isCancelled else { return }
+            let item = AVPlayerItem(url: url)
+            itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                let failed = item.status == .failed
+                Task { @MainActor [weak self] in
+                    guard let self, generation == current else { return }
+                    if failed { state = .failed; error = "This offline video could not be played. Download it again." }
+                }
+            }
+            #if os(iOS) || os(tvOS)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+            #endif
+            state = .buffering; player.replaceCurrentItem(with: item); player.play()
+        } catch { if generation == current { state = .failed; self.error = error.localizedDescription } }
+    }
     public func start(client: StreamingSourceClient, request: PlaybackRequest) async {
         let current = UUID()
         await reset(nextState: .loading, generationID: current)
@@ -122,7 +150,10 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         request.requestedQuality = value; await start(client: client, request: request)
         if request.contentType != "live", seconds.isFinite, seconds > 0 { await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) }
     }
-    public func retry() async { guard let client, let request else { return }; await start(client: client, request: request) }
+    public func retry() async {
+        if let localFile, let request { await startOffline(url: localFile, type: request.contentType, contentID: request.contentId ?? "", expectedDuration: offlineExpectedDuration); return }
+        guard let client, let request else { return }; await start(client: client, request: request)
+    }
     public func stop() async { await reset(nextState: .idle, generationID: UUID()) }
     private func reset(nextState: PlayerState, generationID: UUID) async {
         generation = generationID; pictureInPictureActive = false
@@ -130,15 +161,20 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
         itemObservation = nil; isPaused = true; player.pause(); player.replaceCurrentItem(with: nil)
-        let old = session; let oldClient = client; session = nil; state = nextState; error = nil; client = nil; request = nil
+        let old = session; let oldClient = client; session = nil; localFile = nil; state = nextState; error = nil; client = nil; request = nil
+        offlineExpectedDuration = nil
         #if os(iOS) || os(tvOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
-        if let old, let oldClient { do { try await oldClient.endSession(old.sessionId) } catch {
-            #if os(iOS)
-            guard generation == generationID else { return }
-            #endif
-            self.error = "Playback stopped. The source session will expire; cleanup could not reach the source."
-        } }
+        if let old, let oldClient {
+            // Server cleanup must not hold up local stop, navigation or a new movie.
+            Task { [weak self] in
+                do { try await oldClient.endSession(old.sessionId) }
+                catch {
+                    guard let self, generation == generationID, state == .idle else { return }
+                    self.error = "Playback stopped. The source session will expire; cleanup could not reach the source."
+                }
+            }
+        }
     }
 }

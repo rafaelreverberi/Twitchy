@@ -29,13 +29,12 @@ struct TVRootView: View {
                     NavigationStack { TVHomeView() }.tag("Home").tabItem { Label("Home", systemImage: "house") }
                     NavigationStack { TVChannelsView() }.tag("Channels").tabItem { Label("Channels", systemImage: "person.2") }
                     NavigationStack { TVSearchView() }.tag("Search").tabItem { Label("Search", systemImage: "magnifyingglass") }
-                    NavigationStack { TVLibraryView() }.tag("Library").tabItem { Label("Library", systemImage: "star") }
                     NavigationStack { TVSettingsView { signIn = true } }.tag("Settings").tabItem { Label("Settings", systemImage: "gearshape") }
                 }
 
             }
         }
-        .onAppear { if let screen = TVFixtures.screen, ["Home", "Channels", "Search", "Library", "Settings"].contains(screen) { tab = screen } }
+        .onAppear { if let screen = TVFixtures.screen, ["Home", "Channels", "Search", "Settings"].contains(screen) { tab = screen } }
         .onChange(of: model.auth.status) { _, status in
             if status == "Signing in" || status == "Waiting for authorization" { completingSignIn = true }
             if status == "Connected" && completingSignIn {
@@ -327,22 +326,6 @@ struct TVSearchView: View {
         }
     }
 }
-struct TVLibraryView: View {
-    @Environment(AppModel.self) private var model
-    var body: some View {
-        TVPage(title: "Your library") {
-            Text("Favorites").font(.system(size: 30, weight: .semibold))
-            if model.personal.data.favorites.isEmpty { Text("Save a favorite from a channel.").foregroundStyle(.secondary) }
-            ForEach(model.personal.data.favorites, id: \.self) { login in Button(login) { model.open(login: login, name: login) } }
-            Text("Recently watched").font(.system(size: 30, weight: .semibold))
-            ForEach(model.personal.data.history.prefix(20)) { entry in
-                Button { model.selectedChannel = .init(login: entry.login, name: entry.title, contentType: entry.contentType, contentID: entry.contentID, resumePosition: entry.position) } label: { Label(entry.title, systemImage: entry.position > 0 ? "play.circle" : "clock").lineLimit(1) }
-            }
-            if !model.personal.data.history.isEmpty { Button("Clear watch history", role: .destructive) { model.personal.clearHistory() } }
-        }
-    }
-}
-
 struct TVSettingsView: View {
     @Environment(AppModel.self) private var model
     var signIn: () -> Void
@@ -361,7 +344,7 @@ struct TVSettingsView: View {
                     Text(model.sync.cloud.status).font(.system(size: 25)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if let date = model.sync.cloud.lastSyncedAt { Text("Last synced \(date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 23)).foregroundStyle(.secondary) }
                     Button("Sync now") { Task { await model.sync.sync() } }.disabled(model.sync.cloud.isSyncing).accessibilityIdentifier("tv.sync")
-                    Text("Sources, favorites and preferences sync with iCloud.\nTwitch sign-in stays on this Apple TV.").font(.system(size: 23)).foregroundStyle(.secondary)
+                    Text("Sources and preferences sync with iCloud.\nTwitch sign-in stays on this Apple TV.").font(.system(size: 23)).foregroundStyle(.secondary)
                     if let error = model.personal.error { Text(error).font(.system(size: 23)).foregroundStyle(.secondary) }
                     if model.auth.session != nil { Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.playback.stop(); await model.auth.logout(); await model.refresh() } } }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -581,7 +564,6 @@ struct TVChannelView: View {
             }
             HStack(spacing: 30) {
                 if stream != nil { Button("Watch Live") { play(type: "live", id: nil) }.buttonStyle(.borderedProminent).accessibilityIdentifier("tv.watchLive") }
-                Button(model.personal.data.favorites.contains(selection.login) ? "Remove favorite" : "Add favorite") { model.personal.favorite(selection.login) }
             }.focusSection()
             if let error { Text(error).foregroundStyle(.secondary) }
             if !videos.isEmpty {

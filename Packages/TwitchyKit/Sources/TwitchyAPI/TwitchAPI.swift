@@ -24,7 +24,7 @@ public struct SearchChannel: Codable, Sendable, Identifiable {
 }
 public struct TwitchCategory: Codable, Sendable, Identifiable { public var id: String; public var name: String; public var boxArtUrl: String }
 public struct Video: Codable, Sendable, Identifiable { public var id: String; public var userId: String; public var userLogin: String; public var title: String; public var thumbnailUrl: String; public var duration: String; public var url: String; public var viewCount: Int? = nil; public var createdAt: String? = nil }
-public struct Clip: Codable, Sendable, Identifiable { public var id: String; public var title: String; public var thumbnailUrl: String; public var broadcasterName: String; public var url: String }
+public struct Clip: Codable, Sendable, Identifiable { public var id: String; public var title: String; public var thumbnailUrl: String; public var broadcasterName: String; public var url: String; public var viewCount: Int? = nil; public var createdAt: String? = nil; public var duration: Double? = nil }
 public struct ChannelInfo: Codable, Sendable { public var broadcasterId: String; public var broadcasterLogin: String; public var broadcasterName: String; public var gameName: String; public var title: String }
 public struct Emote: Codable, Sendable, Identifiable { public var id: String; public var name: String; public var images: Images; public struct Images: Codable, Sendable { public var url1x: String; public var url2x: String; public var url4x: String; enum CodingKeys: String, CodingKey { case url1x = "url1X", url2x = "url2X", url4x = "url4X" } } }
 public struct BadgeSet: Codable, Sendable { public var setId: String; public var versions: [Version]; public struct Version: Codable, Sendable { public var id: String; public var imageUrl1x: String; public var title: String; enum CodingKeys: String, CodingKey { case id, title; case imageUrl1x = "imageUrl1X" } } }
@@ -66,8 +66,51 @@ public actor TwitchAPIClient {
     public func searchChannels(_ query: String, liveOnly: Bool = false, after: String? = nil) async throws -> Page<SearchChannel> { var q = ["query": query, "first": "30", "live_only": String(liveOnly)]; q["after"] = after; return try await get(SearchChannel.self, "search/channels", q, cacheable: true) }
     public func searchCategories(_ query: String, after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["query": query, "first": "30"]; q["after"] = after; return try await get(TwitchCategory.self, "search/categories", q, cacheable: true) }
     public func topCategories(after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["first": "12"]; q["after"] = after; return try await get(TwitchCategory.self, "games/top", q, cacheable: true) }
-    public func videos(userID: String, after: String? = nil, type: String? = nil) async throws -> Page<Video> { var q = ["user_id": userID, "first": "20"]; q["after"] = after; q["type"] = type; return try await get(Video.self, "videos", q) }
-    public func clips(broadcasterID: String, after: String? = nil) async throws -> Page<Clip> { var q = ["broadcaster_id": broadcasterID, "first": "20"]; q["after"] = after; return try await get(Clip.self, "clips", q) }
+    public func videos(userID: String, after: String? = nil, type: String? = nil, sort: VideoSort? = nil) async throws -> Page<Video> { var q = ["user_id": userID, "first": "20"]; q["after"] = after; q["type"] = type; q["sort"] = sort?.rawValue; return try await get(Video.self, "videos", q) }
+    public func clips(broadcasterID: String, after: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil, first: Int = 20) async throws -> Page<Clip> {
+        var q = ["broadcaster_id": broadcasterID, "first": String(min(max(first, 1), 100))]
+        q["after"] = after
+        let formatter = ISO8601DateFormatter()
+        q["started_at"] = startedAt.map { formatter.string(from: $0) }
+        q["ended_at"] = endedAt.map { formatter.string(from: $0) }
+        return try await get(Clip.self, "clips", q)
+    }
+    /// Fetch whole recent intervals before sorting: Helix always ranks clips by views.
+    public func recentClips(broadcasterID: String, since: Date, before: Date, minimumCount: Int = 20) async throws -> RecentClipPage {
+        var end = before
+        var items: [Clip] = []
+        var seen = Set<String>()
+        while end > since, items.count < max(1, minimumCount) {
+            try Task.checkCancellation()
+            let start = max(since, end.addingTimeInterval(-86400))
+            let day = try await clipsInInterval(broadcasterID: broadcasterID, start: start, end: end)
+            items += day.filter { seen.insert($0.id).inserted }
+            end = start
+        }
+        items.sort { $0.creationDate == $1.creationDate ? $0.id < $1.id : $0.creationDate > $1.creationDate }
+        return RecentClipPage(data: items, nextBefore: end > since ? end : nil)
+    }
+    private func clipsInInterval(broadcasterID: String, start: Date, end: Date) async throws -> [Clip] {
+        var items: [Clip] = []
+        var cursor: String?
+        var cursors = Set<String>()
+        repeat {
+            try Task.checkCancellation()
+            let page = try await clips(broadcasterID: broadcasterID, after: cursor, startedAt: start, endedAt: end, first: 100)
+            items += page.data
+            cursor = page.pagination?.cursor
+            if let cursor, !cursors.insert(cursor).inserted { throw ClientError.invalidResponse }
+        } while cursor != nil && items.count < 1000
+        // Helix limits clip pagination to roughly 1,000 results. Split busy intervals.
+        if items.count >= 1000 {
+            guard end.timeIntervalSince(start) > 2 else { throw ClientError.message("Too many clips in this time interval. Please try again later.") }
+            let middle = Date(timeIntervalSince1970: floor(start.timeIntervalSince1970 + end.timeIntervalSince(start) / 2))
+            let newer = try await clipsInInterval(broadcasterID: broadcasterID, start: middle, end: end)
+            let older = try await clipsInInterval(broadcasterID: broadcasterID, start: start, end: middle)
+            return newer + older
+        }
+        return items.filter { $0.creationDate >= start && $0.creationDate < end }
+    }
     public func emotes(broadcasterID: String? = nil) async throws -> Page<Emote> { if let id = broadcasterID { return try await get(Emote.self, "chat/emotes", ["broadcaster_id": id]) }; return try await get(Emote.self, "chat/emotes/global") }
     public func badges(broadcasterID: String? = nil) async throws -> Page<BadgeSet> { if let id = broadcasterID { return try await get(BadgeSet.self, "chat/badges", ["broadcaster_id": id]) }; return try await get(BadgeSet.self, "chat/badges/global") }
     public func subscription(broadcasterID: String, userID: String) async throws -> Page<Subscription> { try await get(Subscription.self, "subscriptions/user", ["broadcaster_id": broadcasterID, "user_id": userID]) }
@@ -82,5 +125,20 @@ public actor TwitchAPIClient {
         let body = try JSONCoding.encoder().encode(Body(broadcasterId: broadcasterID, senderId: senderID, message: text))
         let page = try await http.decode(Page<ChatSendResult>.self, request: request("chat/messages", method: "POST", body: body))
         guard let result = page.data.first else { throw ClientError.invalidResponse }; return result
+    }
+}
+
+public enum VideoSort: String, Sendable { case recent = "time", views = "views" }
+public struct RecentClipPage: Sendable {
+    public let data: [Clip]
+    public let nextBefore: Date?
+}
+extension Clip {
+    public var creationDate: Date {
+        guard let createdAt else { return .distantPast }
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: createdAt) { return date }
+        formatter.formatOptions.insert(.withFractionalSeconds)
+        return formatter.date(from: createdAt) ?? .distantPast
     }
 }

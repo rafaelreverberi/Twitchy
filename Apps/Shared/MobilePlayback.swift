@@ -13,6 +13,8 @@ import TwitchySources
     var title = ""
     var category = ""
     var avatar: URL?
+    var thumbnailURL: URL?
+    var duration: String?
     var presentation: Presentation = .mini
     var error: String?
     var recovering = false
@@ -40,20 +42,23 @@ import TwitchySources
     let surfaceID = UUID().uuidString
     var identity: String { (selection?.login ?? "") + ":" + (selection?.contentType ?? "") + ":" + (selection?.contentID ?? "") }
 
-    func start(_ channel: ChannelSelection, type: String = "live", id: String? = nil, title: String? = nil, category: String? = nil, avatar: URL? = nil) {
+    func start(_ channel: ChannelSelection, type: String = "live", id: String? = nil, title: String? = nil, category: String? = nil, avatar: URL? = nil, thumbnailURL: URL? = nil, duration: String? = nil) {
+        model.offlineDownload = nil
         presentation = .watch
         surface.configure(automaticPiP: pipEnabled)
         // Opening the same content is a presentation change, including while it is loading.
         if let current = selection, current.login == channel.login, current.contentType == type, current.contentID == id,
            sourceID == model.sources.activeID, sourceURL == model.sources.active?.baseURL,
            playbackTask != nil || model.playback.player.currentItem != nil {
+            self.thumbnailURL = thumbnailURL ?? self.thumbnailURL
+            self.duration = duration ?? self.duration
             return
         }
         savePosition(); playbackTask?.cancel(); retryTask?.cancel()
         generation = UUID(); let current = generation
         retryAttempt = 0; error = nil; recovering = false; model.error = nil
         var active = channel; active.contentType = type; active.contentID = id; active.returnToPlayback = true
-        selection = active; self.title = title ?? channel.name; self.category = category ?? ""; self.avatar = avatar
+        selection = active; self.title = title ?? channel.name; self.category = category ?? ""; self.avatar = avatar; self.thumbnailURL = thumbnailURL; self.duration = duration
         sourceID = model.sources.activeID; sourceURL = model.sources.active?.baseURL
         connectChat()
         playbackTask = Task { [weak self] in
@@ -66,6 +71,20 @@ import TwitchySources
             playbackTask = nil
             if model.playback.session == nil { error = model.error ?? model.playback.error ?? "The stream could not be started." }
             handleState()
+        }
+    }
+    func startOffline(_ channel: ChannelSelection, item: LocalDownload, url: URL) {
+        savePosition(); playbackTask?.cancel(); retryTask?.cancel(); generation = UUID()
+        let current = generation
+        selection = channel; title = item.displayTitle; category = "Offline video"; avatar = nil
+        thumbnailURL = model.downloads.thumbnailFile(for: item) ?? item.metadata?.thumbnailURL; duration = item.metadata?.duration
+        error = nil; recovering = false; retryAttempt = 0; presentation = .watch; disconnectChat()
+        surface.configure(automaticPiP: pipEnabled)
+        playbackTask = Task { [weak self] in
+            guard let self else { return }
+            await model.playback.startOffline(url: url, type: item.contentType, contentID: item.contentID, expectedDuration: item.metadata?.expectedDuration)
+            guard generation == current, !Task.isCancelled else { return }
+            playbackTask = nil; error = model.playback.error; handleState()
         }
     }
     func updateChannel(login: String, broadcasterID: String?, avatar: URL?, category: String?) {
@@ -91,7 +110,7 @@ import TwitchySources
     }
     func openChannel() {
         guard var channel = selection else { return }
-        collapse(); channel.contentType = nil; channel.contentID = nil; channel.resumePosition = 0
+        collapse(); channel.offlineDownloadID = nil; channel.contentType = nil; channel.contentID = nil; channel.resumePosition = 0
         // A navigation destination must not autoplay when reopening the active channel.
         channel.returnToPlayback = true
         model.selectedChannel = channel
@@ -100,7 +119,7 @@ import TwitchySources
         savePosition(); generation = UUID(); playbackTask?.cancel(); playbackTask = nil
         retryTask?.cancel(); retryTask = nil; backgroundTask?.cancel(); backgroundTask = nil
         surface.configure(automaticPiP: false); surface.pip?.stopPictureInPicture()
-        selection = nil; error = nil; recovering = false; isComposing = false; presentation = .mini; disconnectChat()
+        selection = nil; model.offlineDownload = nil; error = nil; recovering = false; isComposing = false; presentation = .mini; disconnectChat()
         model.playback.player.pause()
         let stoppedGeneration = generation
         playbackTask = Task { [weak self] in
@@ -110,7 +129,7 @@ import TwitchySources
         }
     }
     func sourceChanged() {
-        guard selection != nil, sourceID != model.sources.activeID || sourceURL != model.sources.active?.baseURL else { return }
+        guard !model.isOfflinePlayback, selection != nil, sourceID != model.sources.activeID || sourceURL != model.sources.active?.baseURL else { return }
         stop()
     }
     func retry() {
@@ -149,7 +168,7 @@ import TwitchySources
         }
     }
     func loadWatchingProfile() async {
-        guard avatar == nil, let channel = selection, let api = model.api else { return }
+        guard !model.isOfflinePlayback, avatar == nil, let channel = selection, let api = model.api else { return }
         let current = generation
         do {
             let profile = try await api.users(logins: [channel.login]).data.first
@@ -163,6 +182,7 @@ import TwitchySources
         if seconds.isFinite && seconds > 0 { model.personal.watched(.init(login: channel.login, title: title, position: seconds, contentType: channel.contentType, contentID: id)) }
     }
     func connectChat() {
+        guard !model.isOfflinePlayback else { disconnectChat(); return }
         guard !inBackground, let id = selection?.broadcasterID, let api = model.api,
               let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
         let key = id + ":" + session.accessToken
