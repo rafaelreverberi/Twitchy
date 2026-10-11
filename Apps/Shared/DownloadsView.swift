@@ -15,7 +15,9 @@ struct DownloadsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 7) {
+                        #if !os(iOS)
                         Text("Downloads").font(.largeTitle.bold())
+                        #endif
                         Text("Your videos, ready to go.").foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -38,14 +40,19 @@ struct DownloadsView: View {
                 if !interrupted.isEmpty { section("Needs attention", items: interrupted) }
                 if !completed.isEmpty { section("Ready to watch", items: completed) }
                 #endif
-            }.padding(20).frame(maxWidth: 1080, alignment: .leading).frame(maxWidth: .infinity)
+            }
+            #if os(macOS)
+            .padding(30).frame(maxWidth: 1500, alignment: .leading).frame(maxWidth: .infinity)
+            #else
+            .padding(20).frame(maxWidth: 1080, alignment: .leading).frame(maxWidth: .infinity)
+            #endif
         }.background(TwitchyTheme.background)
             .task { model.downloads.prepareThumbnails() }
+            #if os(iOS)
             .safeAreaInset(edge: .bottom) {
-                #if os(iOS)
                 if model.mobile.selection != nil { Color.clear.frame(height: 70) }
-                #endif
             }
+            #endif
     }
     private var storageLabel: String { ByteCountFormatter.string(fromByteCount: model.downloads.storageBytes, countStyle: .file) }
     private func section(_ title: String, items: [LocalDownload]) -> some View {
@@ -58,17 +65,27 @@ struct DownloadsView: View {
         Group {
             #if os(macOS)
             HStack(alignment: .top, spacing: 20) {
-                artwork(item).frame(width: 220, height: 124)
+                playableArtwork(item).frame(width: 220, height: 124)
                 details(item).frame(maxWidth: .infinity, alignment: .leading)
             }.padding(18)
             #else
             VStack(alignment: .leading, spacing: 14) {
-                artwork(item).aspectRatio(16 / 9, contentMode: .fit)
+                playableArtwork(item).aspectRatio(16 / 9, contentMode: .fit)
                 details(item)
             }.padding(14)
             #endif
         }.background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 20))
             .accessibilityElement(children: .contain).accessibilityIdentifier("download.\(item.id.uuidString)")
+    }
+    @ViewBuilder private func playableArtwork(_ item: LocalDownload) -> some View {
+        if item.job.status == .completed, let url = model.downloads.file(for: item) {
+            Button { model.playOffline(item, url: url) } label: { artwork(item) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Play offline: \(item.displayTitle)")
+                .accessibilityIdentifier("download.artwork.play")
+        } else {
+            artwork(item)
+        }
     }
     private func artwork(_ item: LocalDownload) -> some View {
         DownloadArtwork(fileURL: model.downloads.thumbnailFile(for: item), remoteURL: item.metadata?.thumbnailURL)

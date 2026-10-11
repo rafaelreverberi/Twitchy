@@ -510,3 +510,19 @@ private actor SlowCleanupTransport: HTTPTransport {
     #expect(started.duration(to: .now) < .milliseconds(500))
     #expect(controller.player.currentItem == nil && controller.session == nil)
 }
+
+@Test func historyThumbnailsRequestExactVideoAndClipIDs() async throws {
+    let transport = FixtureTransport([#"{"data":[]}"#, #"{"data":[]}"#])
+    let api = TwitchAPIClient(clientID: "public-id", token: "test-only", transport: transport)
+    _ = try await api.videos(ids: ["older-video", "recent-video"])
+    _ = try await api.clips(ids: ["older-clip", "recent-clip"])
+    let requests = await transport.requests
+    #expect(requests.count == 2)
+    for (index, expected) in [["older-video", "recent-video"], ["older-clip", "recent-clip"]].enumerated() {
+        let url = try #require(requests[index].url)
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(url.lastPathComponent == (index == 0 ? "videos" : "clips"))
+        #expect(query.filter { $0.name == "id" }.compactMap(\.value) == expected)
+        #expect(!query.contains { $0.name == "user_id" || $0.name == "broadcaster_id" })
+    }
+}

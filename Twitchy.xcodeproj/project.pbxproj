@@ -37,11 +37,13 @@
 		57535B2C7B5D261E5EFB2C8C /* TwitchyAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 16575BF124C3CB0E3F24F77D /* TwitchyAuth */; };
 		57FF6E3BB99785EDAC6464B2 /* TwitchyAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A0003E8B9CABC2BA6D89E3D2 /* TwitchyAPI */; };
 		584FBD01D9322FEF89C40199 /* TVNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56CFA5ABECE5921D11704FB3 /* TVNavigationTests.swift */; };
+		6154B30A823100D373AD3163 /* WatchHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */; };
 		6184D2FA4FFBD8D199A3CE93 /* MobileFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */; };
 		64D5282F2EF631A097E2D651 /* TwitchyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */; };
 		6C566CEF8E9F1DF5B55BF814 /* TwitchySources in Frameworks */ = {isa = PBXBuildFile; productRef = 7B4AD5557C60171B05E51986 /* TwitchySources */; };
 		7081426D37D1DD9BBDE8F6A4 /* MobileChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEEFA086DD0E86C2CB2E188 /* MobileChannelView.swift */; };
 		7179D914E14B1FAAC2812524 /* ChannelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */; };
+		746B6F5EF9981876131CB4DF /* WatchHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */; };
 		78C4651DF1E324E1513BA0C2 /* TwitchyChat in Frameworks */ = {isa = PBXBuildFile; productRef = D5993BC056467CAC6DE5E408 /* TwitchyChat */; };
 		79E400B2F33E2A66A1EFDD5B /* MobilePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299D57EA01052822E4020017 /* MobilePlayback.swift */; };
 		7DD6DD19F04AC6C19E85AD94 /* TwitchyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */; };
@@ -53,6 +55,7 @@
 		8D85DC7777BE1524D2E1CFF1 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6978C3F152935299090A10AD /* NavigationTests.swift */; };
 		94405C46F8B4F642409D6199 /* MobileChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEEFA086DD0E86C2CB2E188 /* MobileChannelView.swift */; };
 		967EBD9B90E339ABDABD454C /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8229107D231D14F33914AC7 /* SearchView.swift */; };
+		9793AC35E83B888BE0FA0572 /* WatchHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */; };
 		9B2A81056F5B802A4DE4C7E2 /* MacHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */; };
 		9CBACFABBCC243A3DD1C7330 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8229107D231D14F33914AC7 /* SearchView.swift */; };
 		9E62EB7F88ABAED46F88DC2C /* TwitchyPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 20DC2AE654509599336A6F58 /* TwitchyPlayback */; };
@@ -121,6 +124,7 @@
 		33BF1C35ACB7801DECEBB322 /* TVFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVFixtures.swift; sourceTree = "<group>"; };
 		49ABB55FFF2EA09AB8010F7E /* TwitchyTVStorageTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TwitchyTVStorageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B2403F4331BA7811C0549E0 /* Twitchy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Twitchy.entitlements; sourceTree = "<group>"; };
+		518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHistoryRow.swift; sourceTree = "<group>"; };
 		56CFA5ABECE5921D11704FB3 /* TVNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVNavigationTests.swift; sourceTree = "<group>"; };
 		60E4700C28E93287F8B19F64 /* TVViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVViews.swift; sourceTree = "<group>"; };
 		68DC7D882795E6A8887C791D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -297,6 +301,7 @@
 				60E4700C28E93287F8B19F64 /* TVViews.swift */,
 				4B2403F4331BA7811C0549E0 /* Twitchy.entitlements */,
 				ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */,
+				518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */,
 			);
 			name = Shared;
 			path = Apps/Shared;
@@ -604,6 +609,7 @@
 				369F6D1ADCE4AAA8379FD74D /* TVFixtures.swift in Sources */,
 				075FE2989857BE222EC14C1C /* TVViews.swift in Sources */,
 				64D5282F2EF631A097E2D651 /* TwitchyApp.swift in Sources */,
+				6154B30A823100D373AD3163 /* WatchHistoryRow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -626,6 +632,7 @@
 				3D076B3D323680B4484ED0C8 /* TVFixtures.swift in Sources */,
 				B4301AA0D0029C01588DE61F /* TVViews.swift in Sources */,
 				7DD6DD19F04AC6C19E85AD94 /* TwitchyApp.swift in Sources */,
+				9793AC35E83B888BE0FA0572 /* WatchHistoryRow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -656,6 +663,7 @@
 				F9F16127D1C22460DAD01B93 /* TVFixtures.swift in Sources */,
 				D5FFFBCD7BE3C402F6BB2B86 /* TVViews.swift in Sources */,
 				0045573206D8277BF16B527F /* TwitchyApp.swift in Sources */,
+				746B6F5EF9981876131CB4DF /* WatchHistoryRow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

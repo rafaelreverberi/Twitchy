@@ -31,27 +31,7 @@ struct MacHomeView: View {
                     if model.loading { ProgressView("Updating your lineup…") }
                     if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
-                    let history = model.personal.data.history.filter { $0.contentID != nil && $0.position > 0 }
-                    if !history.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Pick up where you left off").font(.title2.bold())
-                            ScrollView(.horizontal) {
-                                HStack(spacing: 14) {
-                                    ForEach(history) { entry in
-                                        Button {
-                                            model.selectedChannel = .init(login: entry.login, name: entry.title, contentType: entry.contentType, contentID: entry.contentID, resumePosition: entry.position)
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: 10) {
-                                                Image(systemName: "play.circle.fill").font(.title).foregroundStyle(TwitchyTheme.highlight)
-                                                Text(entry.title).font(.headline).lineLimit(1)
-                                                Text("Resume at \(Int(entry.position) / 60):\(String(format: "%02d", Int(entry.position) % 60))").font(.caption).foregroundStyle(.secondary)
-                                            }.padding(20).frame(width: 230, alignment: .leading).macSurface()
-                                        }.buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    if !model.personal.data.history.isEmpty { WatchHistoryRow() }
                     StreamSection(title: "Popular right now", streams: model.streams)
                     if model.streamsCursor != nil { Button("Discover more streams") { Task { await model.moreStreams() } }.buttonStyle(.bordered) }
                     if !model.categories.isEmpty {

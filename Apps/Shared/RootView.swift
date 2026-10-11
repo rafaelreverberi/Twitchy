@@ -108,6 +108,9 @@ struct RootView: View {
     private var macSplit: some View {
         NavigationSplitView {
             List(selection: Binding(get: { model.selectedChannel == nil ? destination : nil }, set: { value in
+                // List deselects its row when a watch/channel route opens. That
+                // nil write must not dismiss the route that triggered it.
+                guard let value else { return }
                 model.selectedChannel = nil; destination = value
             })) {
                 Section { HStack { BrandMark(); Text("Twitchy").font(.title2.bold()) }.padding(.vertical, 14) }
@@ -162,7 +165,6 @@ struct RootView: View {
             guard let window = notification.object as? NSWindow, window === model.desktopPlayerSurface.view.window else { return }
             model.desktopFullscreen = false
         }
-        .onChange(of: destination) { _, _ in model.selectedChannel = nil }
         .frame(minWidth: 940, minHeight: 640)
         .task(id: model.playback.session?.sessionId) {
             while model.nowPlaying != nil && !Task.isCancelled {
@@ -248,12 +250,16 @@ struct HomeView: View {
                     #endif
                     if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
                     if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
+                    #if os(tvOS)
                     let resumable = model.personal.data.history.filter { $0.contentID != nil && $0.position > 0 }
                     if !resumable.isEmpty {
                         Text("Continue Watching").font(.title2.bold())
                         ForEach(resumable) { entry in Button { model.selectedChannel = .init(login: entry.login, name: entry.title, contentType: entry.contentType, contentID: entry.contentID, resumePosition: entry.position) } label: { Label("\(entry.title) · \(Int(entry.position))s", systemImage: "play.circle") } }
                     }
                     if !model.personal.data.history.isEmpty { localSection("Recently watched", logins: model.personal.data.history.prefix(8).map(\.login)) }
+                    #else
+                    if !model.personal.data.history.isEmpty { WatchHistoryRow() }
+                    #endif
                     StreamSection(title: "Popular right now", streams: model.streams)
                     if model.streamsCursor != nil { Button("Load more streams") { Task { await model.moreStreams() } } }
                     Text("Popular categories").font(.title2.bold())
@@ -263,7 +269,10 @@ struct HomeView: View {
             }.padding(24)
         }.refreshable { await model.refresh() }
     }
+
+    #if os(tvOS)
     private func localSection(_ title: String, logins: [String]) -> some View { VStack(alignment: .leading, spacing: 12) { Text(title).font(.title2.bold()); ScrollView(.horizontal) { HStack { ForEach(logins, id: \.self) { login in Button { model.open(login: login, name: login) } label: { Label(login, systemImage: "person.crop.circle").padding(14).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 10)) }.buttonStyle(.plain) } } } } }
+    #endif
 }
 struct StreamSection: View {
     var title: String; var streams: [TwitchStream]
