@@ -67,6 +67,14 @@ public actor TwitchAPIClient {
     public func searchCategories(_ query: String, after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["query": query, "first": "30"]; q["after"] = after; return try await get(TwitchCategory.self, "search/categories", q, cacheable: true) }
     public func topCategories(after: String? = nil) async throws -> Page<TwitchCategory> { var q = ["first": "12"]; q["after"] = after; return try await get(TwitchCategory.self, "games/top", q, cacheable: true) }
     public func videos(userID: String, after: String? = nil, type: String? = nil, sort: VideoSort? = nil) async throws -> Page<Video> { var q = ["user_id": userID, "first": "20"]; q["after"] = after; q["type"] = type; q["sort"] = sort?.rawValue; return try await get(Video.self, "videos", q) }
+    public func videos(ids: [String]) async throws -> Page<Video> {
+        let query = ids.prefix(100).map { URLQueryItem(name: "id", value: $0) }
+        return try await http.decode(Page<Video>.self, request: request("videos", query: query))
+    }
+    public func clips(ids: [String]) async throws -> Page<Clip> {
+        let query = ids.prefix(100).map { URLQueryItem(name: "id", value: $0) }
+        return try await http.decode(Page<Clip>.self, request: request("clips", query: query))
+    }
     public func clips(broadcasterID: String, after: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil, first: Int = 20) async throws -> Page<Clip> {
         var q = ["broadcaster_id": broadcasterID, "first": String(min(max(first, 1), 100))]
         q["after"] = after

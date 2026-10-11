@@ -14,8 +14,12 @@ struct ProfileView: View {
                 else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
                 Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
                 Divider()
+                #if os(tvOS)
                 Text("Watch history").font(.title2.bold())
                 ForEach(model.personal.data.history) { entry in Button { model.open(login: entry.login, name: entry.title) } label: { HStack { Text(entry.title); Spacer(); Text(entry.watchedAt, style: .date).font(.caption).foregroundStyle(.secondary) } } }
+                #else
+                WatchHistoryRow()
+                #endif
                 if !model.personal.data.history.isEmpty { Button("Clear watch history", role: .destructive) { model.personal.clearHistory() } }
                 if let error = model.personal.error { Notice(error) }
                 Divider(); Text("Twitchy · 0.1.0").font(.headline); Text("Your streams. Your way.").foregroundStyle(.secondary); Text("An independent third-party client by Rafael Reverberi. Not affiliated with Twitch.").font(.caption).foregroundStyle(.secondary)

@@ -282,6 +282,9 @@ struct ChatPanel: View {
                             }
                         }.padding(.vertical, 8)
                     }
+                    #if os(macOS)
+                    .scrollIndicators(.hidden)
+                    #endif
                     #if os(tvOS)
                     .onMoveCommand { _ in follow = false }
                     #else
@@ -301,7 +304,23 @@ struct ChatPanel: View {
                 #if os(iOS)
                 Spacer(minLength: 0)
                 #endif
+                #if os(macOS)
+                HStack(spacing: 10) {
+                    TextField("Send a message", text: $text)
+                        .textFieldStyle(.plain).onSubmit { send() }.accessibilityIdentifier("chat.input")
+                    Button { send() } label: {
+                        Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .background(.tint.opacity(0.16), in: Circle())
+                    }.buttonStyle(.plain)
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || model.chat.status != "Connected")
+                        .accessibilityLabel("Send message")
+                }.padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                    .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.primary.opacity(0.1), lineWidth: 1) }
+                #else
                 HStack { TextField("Send a message", text: $text).onSubmit { send() }.accessibilityIdentifier("chat.input"); Button { send() } label: { Image(systemName: "paperplane.fill") }.disabled(text.isEmpty || sending || model.chat.status != "Connected").accessibilityLabel("Send message") }
+                #endif
             }
         }
         #if os(iOS)
