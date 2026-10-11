@@ -39,12 +39,12 @@ func mockNativeHLSPlaybackAndStop() async throws {
     #expect(controller.session?.sessionId == "fixture-session")
     await controller.stop(); #expect(controller.player.currentItem == nil)
 }
-@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server")) @MainActor
-func mockDownloadTransferPersistenceAndDelete() async throws {
+@Test(.enabled(if: mockURL != nil, "Run with TWITCHY_MOCK_URL and the localhost mock server"), arguments: ["clip", "vod"]) @MainActor
+func mockDownloadTransferPersistenceAndDelete(type: String) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let manager = DownloadManager(directory: directory)
-    await manager.enqueue(client: try fixtureClient(), type: "vod", contentID: "fixture", permission: "fixture-owner", metadata: .init(title: "Fixture video", channel: "Fixture channel", duration: "0:06"))
+    await manager.enqueue(client: try fixtureClient(), type: type, contentID: "fixture", permission: "fixture-owner", metadata: .init(title: "Fixture video", channel: "Fixture channel", duration: "0:06"))
     for _ in 0..<40 { if manager.items.first?.job.status == .completed { break }; try await Task.sleep(for: .milliseconds(100)) }
     let item = try #require(manager.items.first)
     #expect(item.job.status == .completed)
@@ -58,6 +58,21 @@ func mockDownloadTransferPersistenceAndDelete() async throws {
     let restored = DownloadManager(directory: directory); #expect(restored.items.first?.job.status == .completed)
     #expect(restored.items.first?.metadata?.title == "Fixture video")
     #expect(restored.thumbnailFile(for: withArtwork) != nil)
+    let restoredItem = try #require(restored.items.first)
+    let local = try #require(restored.file(for: restoredItem))
+    if let fixture = ProcessInfo.processInfo.environment["TWITCHY_DELAY_MOOV_INTEGRATION"] {
+        try await verifyDelayMoovMovie(local, audio: fixture != "video-only")
+    }
+    let controller = PlaybackController()
+    controller.player.isMuted = true
+    await controller.startOffline(url: local, type: type, contentID: "fixture", expectedDuration: 6)
+    for _ in 0..<100 {
+        if controller.player.currentTime().seconds >= 5.9 || controller.state == .failed { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(controller.isOffline && controller.session == nil)
+    #expect(controller.player.currentItem?.status == .readyToPlay && controller.player.currentTime().seconds >= 5.9)
+    await controller.stop()
     try restored.delete(item.id); #expect(restored.items.isEmpty)
 }
 
