@@ -66,6 +66,39 @@ public enum OfflineMP4 {
         }
         return low < media.count && media[low].lowerBound <= at && at + UInt64(length) <= media[low].upperBound
     }
+    /// Fragmented movies can end their edit list with a zero-duration (open) edit.
+    /// A regular movie needs a finite duration, in movie ticks, while media_time is
+    /// in track ticks. Preserve empty edits, trimming/priming and finite edits.
+    private static func indexedEdits(_ payload: Data, mediaEnd: Int64, scale: UInt32, movieScale: UInt32) throws -> (Data, UInt64) {
+        var result = Data(); var total: UInt64 = 0; var found = false
+        for box in try boxes(payload) {
+            guard box.type == "elst" else { result.append(box.data); continue }
+            guard !found, let version = box.payload.first, version <= 1 else { throw invalid() }
+            found = true
+            var d = box.payload
+            let count = Int(try u32(d, 4)), width = version == 1 ? 20 : 12
+            guard count > 0, count <= (d.count - 8) / width, d.count == 8 + count * width else { throw invalid() }
+            for i in 0..<count {
+                let p = 8 + i * width
+                var segment = version == 1 ? try u64(d, p) : UInt64(try u32(d, p))
+                let start = version == 1 ? Int64(bitPattern: try u64(d, p+8)) : Int64(Int32(bitPattern: try u32(d, p+4)))
+                guard start >= -1, try u32(d, p + width - 4) == 0x00010000 else { throw invalid() }
+                if segment == 0 {
+                    guard i == count - 1, start >= 0, start < mediaEnd else { throw invalid() }
+                    let available = UInt64(mediaEnd - start)
+                    guard available <= (UInt64.max - UInt64(scale) + 1) / UInt64(movieScale) else { throw invalid() }
+                    segment = (available * UInt64(movieScale) + UInt64(scale) - 1) / UInt64(scale)
+                    guard version == 1 || segment <= UInt32.max else { throw invalid() }
+                    d.replaceSubrange(p..<p + (version == 1 ? 8 : 4), with: version == 1 ? integer(segment) : integer(UInt32(segment)))
+                }
+                guard segment <= UInt64.max - total else { throw invalid() }
+                total += segment
+            }
+            result.append(atom("elst", d))
+        }
+        guard found else { throw invalid() }
+        return (result, total)
+    }
     private static func normalize(_ url: URL, expectedDuration: Double?) async throws {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         let size = try file.seekToEnd(); try file.seek(toOffset: 0)
@@ -104,13 +137,20 @@ public enum OfflineMP4 {
                 defaults[try u32(box.payload, 4)] = Defaults(duration: try u32(box.payload, 12), size: try u32(box.payload, 16), flags: try u32(box.payload, 20))
             }
         }
-        var tracks: [UInt32: [Sample]] = [:]; var sampleCount = 0
+        var tracks: [UInt32: [Sample]] = [:]; var decodeEnds: [UInt32: UInt64] = [:]; var sampleCount = 0
         for (position, data) in fragments {
             try Task.checkCancellation()
             for traf in try boxes(data) where traf.type == "traf" {
                 let children = try boxes(traf.payload)
                 guard let tfhd = children.first(where: { $0.type == "tfhd" }) else { throw invalid() }
                 let flags = try u32(tfhd.payload, 0) & 0xFFFFFF, id = try u32(tfhd.payload, 4)
+                if let tfdt = children.first(where: { $0.type == "tfdt" }) {
+                    guard let version = tfdt.payload.first, version <= 1 else { throw invalid() }
+                    let start = version == 1 ? try u64(tfdt.payload, 4) : UInt64(try u32(tfdt.payload, 4))
+                    // stts begins at zero and is contiguous. Reject a gap/overlap rather
+                    // than silently shifting one track relative to the other.
+                    guard start == decodeEnds[id, default: 0] else { throw invalid() }
+                }
                 var def = defaults[id] ?? Defaults(), cursor = 8
                 var base = position
                 if flags & 1 != 0 { base = try u64(tfhd.payload, cursor); cursor += 8 }
@@ -138,10 +178,15 @@ public enum OfflineMP4 {
                         if flags & 0x100 != 0 { duration = try u32(d,c); c += 4 }
                         if flags & 0x200 != 0 { length = try u32(d,c); c += 4 }
                         if flags & 0x400 != 0 { sf = try u32(d,c); c += 4 }
-                        if flags & 0x800 != 0 { cts = Int32(bitPattern: try u32(d,c)); c += 4 }
+                        if flags & 0x800 != 0 {
+                            let raw = try u32(d,c); c += 4
+                            guard d.first == 1 || (d.first == 0 && raw <= Int32.max) else { throw invalid() }
+                            cts = Int32(bitPattern: raw)
+                        }
                         guard duration > 0, length > 0, at <= size, UInt64(length) <= size-at,
                               containsSample(at, length: length, media: media) else { throw invalid() }
                         tracks[id, default: []].append(Sample(offset: at, size: length, duration: duration, cts: cts, sync: sf & 0x10000 == 0))
+                        decodeEnds[id, default: 0] += UInt64(duration)
                         at += UInt64(length)
                     }
                     offset = at
@@ -160,10 +205,20 @@ public enum OfflineMP4 {
             guard let mdhd = mdiaBoxes.first(where: { $0.type == "mdhd" }) else { throw invalid() }
             let scale = try u32(mdhd.payload, mdhd.payload.first == 1 ? 20 : 12); guard scale > 0 else { throw invalid() }
             let ticks = samples.reduce(UInt64(0)) { $0 + UInt64($1.duration) }
-            let movieTicks = UInt64((Double(ticks) / Double(scale) * Double(movieScale)).rounded(.up)); longest = max(longest, movieTicks)
+            var decode: Int64 = 0; var presentationEnd: Int64 = 0
+            for sample in samples {
+                presentationEnd = max(presentationEnd, decode + Int64(sample.cts) + Int64(sample.duration))
+                decode += Int64(sample.duration)
+            }
+            let edits = try children.first(where: { $0.type == "edts" }).map {
+                try indexedEdits($0.payload, mediaEnd: presentationEnd, scale: scale, movieScale: movieScale)
+            }
+            let movieTicks = edits?.1 ?? UInt64((Double(ticks) / Double(scale) * Double(movieScale)).rounded(.up))
+            longest = max(longest, movieTicks)
             var track = Data()
             for child in children {
                 if child.type == "tkhd" { track.append(atom("tkhd", try duration(child.payload, kind: "tkhd", value: movieTicks))) }
+                else if child.type == "edts", let edits { track.append(atom("edts", edits.0)) }
                 else if child.type == "mdia" {
                     var media = Data()
                     for m in mdiaBoxes {
@@ -205,7 +260,8 @@ public enum OfflineMP4 {
         let asset = AVURLAsset(url: temporary, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let actual = try await asset.load(.duration).seconds
         let expected = Double(longest) / Double(movieScale)
-        guard actual.isFinite, actual >= expected - max(0.25, expected * 0.01) else { throw invalid() }
+        guard actual.isFinite, actual >= expected - max(0.25, expected * 0.01),
+              try await asset.load(.isPlayable) else { throw invalid() }
         if let expectedDuration, expectedDuration.isFinite, expectedDuration > 0 {
             guard actual >= expectedDuration - max(2, expectedDuration * 0.05) else { throw invalid() }
         }
