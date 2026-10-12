@@ -7,6 +7,7 @@ import TwitchyDesignSystem
 struct WatchHistoryRow: View {
     @Environment(AppModel.self) private var model
     var title = "Watch history"
+    var onSelect: ((WatchEntry) -> Void)? = nil
     @State private var visibleCount = 10
     @State private var thumbnails: [String: URL] = [:]
     @State private var avatars: [String: URL] = [:]
@@ -36,6 +37,7 @@ struct WatchHistoryRow: View {
                     HStack(spacing: spacing) {
                         ForEach(entries) { entry in
                             Button {
+                                if let onSelect { onSelect(entry); return }
                                 model.selectedChannel = .init(login: entry.login, name: entry.title, contentType: entry.contentType, contentID: entry.contentID, resumePosition: entry.position)
                             } label: { card(entry) }
                             .buttonStyle(.plain)

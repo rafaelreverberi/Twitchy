@@ -7,6 +7,50 @@ final class NavigationTests: XCTestCase {
         element.tap()
         #endif
     }
+    @MainActor private func selectDestination(_ name: String, in app: XCUIApplication) {
+        #if os(macOS)
+        activate(app.descendants(matching: .any)["nav." + name.lowercased()].firstMatch)
+        #else
+        activate(app.tabBars.buttons[name])
+        #endif
+    }
+    @MainActor func testOfflineDiscoveryKeepsAccountAndOpensDownloads() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 10))
+        let offlineCapture = XCTAttachment(screenshot: app.screenshot())
+        offlineCapture.name = "Centered offline state"; offlineCapture.lifetime = .keepAlways; add(offlineCapture)
+        for name in ["Home", "Channels", "Search"] {
+            selectDestination(name, in: app)
+            XCTAssertTrue(app.staticTexts["You’re offline"].exists)
+            XCTAssertFalse(app.staticTexts["Your live lineup"].exists)
+            XCTAssertFalse(app.buttons["Sign in with Twitch"].exists)
+        }
+        activate(app.buttons["home.downloads"])
+        XCTAssertFalse(app.staticTexts["You’re offline"].exists)
+        selectDestination("Profile", in: app)
+        XCTAssertTrue(app.staticTexts["Offline viewer"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Signed in · Offline"].exists)
+        XCTAssertFalse(app.buttons["Sign in with Twitch"].exists)
+        activate(app.buttons["profile.settings"])
+        XCTAssertTrue(app.staticTexts["Signed in as @offlineviewer"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Signed in · Offline"].exists)
+        XCTAssertFalse(app.buttons["oauth.signIn"].exists)
+    }
+    @MainActor func testDiscoveryShellAppearsBeforeLibraryLoads() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "loading"
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["home.skeleton"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
+        let loadingCapture = XCTAttachment(screenshot: app.screenshot())
+        loadingCapture.name = "Discovery loading placeholders"; loadingCapture.lifetime = .keepAlways; add(loadingCapture)
+        selectDestination("Channels", in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["channels.skeleton"].firstMatch.exists)
+        selectDestination("Downloads", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["channels.skeleton"].firstMatch.exists)
+    }
     @MainActor func testWelcomeAndPrimaryNavigation() {
         let app = XCUIApplication(); app.launch()
         let start = app.buttons["onboarding.complete"]
@@ -69,6 +113,35 @@ final class NavigationTests: XCTestCase {
     }
     #endif
     #if os(iOS)
+    @MainActor func testHomeIsUsableWhileStartupIsLoading() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_HOME_FIXTURE"] = "loading"
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Downloads"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["home.skeleton"].exists)
+        XCTAssertTrue(app.staticTexts["Your live lineup"].exists)
+        XCTAssertFalse(app.staticTexts["Loading your library…"].exists)
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
+        capture("Home with stream placeholders")
+        app.tabBars.buttons["Downloads"].tap()
+        XCTAssertTrue(app.navigationBars["Downloads"].exists)
+        app.tabBars.buttons["Home"].tap()
+        XCTAssertTrue(app.buttons["Sign in with Twitch"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.otherElements["home.skeleton"].exists)
+    }
+    @MainActor func testOfflineHomeOpensDownloadsDuringStartup() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_HOME_FIXTURE"] = "offline"
+        app.launch()
+        let downloads = app.buttons["home.downloads"]
+        XCTAssertTrue(downloads.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["You’re offline"].exists)
+        XCTAssertFalse(app.otherElements["home.skeleton"].exists)
+        XCTAssertFalse(app.buttons["Sign in with Twitch"].exists)
+        capture("Offline Home")
+        downloads.tap()
+        XCTAssertTrue(app.navigationBars["Downloads"].exists)
+    }
     @MainActor func testCompanionWaitingAndDismissal() {
         let app = XCUIApplication()
         app.launchEnvironment["TWITCHY_UI_COMPANION_FIXTURE"] = "idle"

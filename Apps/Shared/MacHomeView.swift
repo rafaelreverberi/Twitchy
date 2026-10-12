@@ -20,7 +20,8 @@ struct MacHomeView: View {
                         .buttonStyle(.bordered).disabled(model.loading).accessibilityLabel("Refresh streams")
                 }
                 if let error = model.error { Notice(error) }
-                if model.api == nil {
+                if model.libraryLoading { DiscoverySkeleton() }
+                else if model.api == nil {
                     VStack(alignment: .leading, spacing: 16) {
                         Label("Make yourself at home", systemImage: "sparkles").font(.title2.bold())
                         Text("A place for the channels you love and the streams you haven't found yet.").foregroundStyle(.secondary)
@@ -28,11 +29,16 @@ struct MacHomeView: View {
                     }.padding(28).macSurface()
                 } else {
                     if let featured { feature(featured) }
-                    if model.loading { ProgressView("Updating your lineup…") }
-                    if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams) }
-                    if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams) }
-                    if !model.personal.data.history.isEmpty { WatchHistoryRow() }
-                    StreamSection(title: "Popular right now", streams: model.streams)
+                    if !model.recommendedStreams.isEmpty { StreamSection(title: "For you · Live now", streams: model.recommendedStreams, onSelect: play) }
+                    if !model.followedStreams.isEmpty { StreamSection(title: "Following · Live now", streams: model.followedStreams, onSelect: play) }
+                    if !model.personal.data.history.isEmpty {
+                        WatchHistoryRow(onSelect: { entry in
+                            let selection = ChannelSelection(login: entry.login, name: entry.title, contentType: entry.contentType, contentID: entry.contentID, resumePosition: entry.position)
+                            model.startDesktopPlayback(selection, type: entry.contentType ?? "live", contentID: entry.contentID, title: entry.title)
+                            model.reopenDesktopPlayback()
+                        })
+                    }
+                    StreamSection(title: "Popular right now", streams: model.streams, onSelect: play)
                     if model.streamsCursor != nil { Button("Discover more streams") { Task { await model.moreStreams() } }.buttonStyle(.bordered) }
                     if !model.categories.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
@@ -41,7 +47,7 @@ struct MacHomeView: View {
                                 ForEach(model.categories) { category in
                                     NavigationLink { CategoryDetail(category: category) } label: {
                                         VStack(alignment: .leading, spacing: 10) {
-                                            RemoteImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380")))
+                                            DiscoveryImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380")))
                                                 .aspectRatio(0.75, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 14))
                                             Text(category.name).font(.headline).lineLimit(1)
                                         }
@@ -57,8 +63,8 @@ struct MacHomeView: View {
     }
     private func feature(_ stream: TwitchStream) -> some View {
         HStack(spacing: 0) {
-            Button { model.open(login: stream.userLogin, name: stream.userName, id: stream.userId) } label: {
-                RemoteImage(stream.thumbnail).aspectRatio(16 / 9, contentMode: .fit)
+            Button { play(stream) } label: {
+                DiscoveryImage(stream.thumbnail).aspectRatio(16 / 9, contentMode: .fit)
                     .overlay(alignment: .topLeading) { MacLiveBadge().padding(18) }
                     .overlay(alignment: .center) { Image(systemName: "play.circle.fill").font(.system(size: 54)).foregroundStyle(.white).shadow(radius: 12) }
             }.buttonStyle(.plain)
@@ -69,9 +75,13 @@ struct MacHomeView: View {
                 Text(stream.title).font(.headline).lineLimit(3)
                 Text(stream.gameName).foregroundStyle(.secondary)
                 Label("\(stream.viewerCount.formatted()) watching", systemImage: "person.2").font(.caption).foregroundStyle(.secondary)
-                Button("Explore channel", systemImage: "arrow.right") { model.open(login: stream.userLogin, name: stream.userName, id: stream.userId) }.buttonStyle(.borderedProminent)
+                Button("Watch live", systemImage: "play.fill") { play(stream) }.buttonStyle(.borderedProminent)
             }.padding(26).frame(width: 285, alignment: .leading)
         }.macSurface().clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+    private func play(_ stream: TwitchStream) {
+        model.startDesktopPlayback(.init(login: stream.userLogin, name: stream.userName, broadcasterID: stream.userId), title: stream.title, thumbnail: stream.thumbnail)
+        model.reopenDesktopPlayback()
     }
 
 }
@@ -398,7 +408,7 @@ struct DesktopNowPlayingView: View {
             HStack(spacing: 8) {
                 Button { model.reopenDesktopPlayback() } label: {
                     HStack(spacing: 8) {
-                        RemoteImage(avatarURL, symbol: "person.crop.circle")
+                        DiscoveryImage(avatarURL, symbol: "person.crop.circle")
                             .frame(width: 32, height: 32).clipShape(Circle())
                         Text(active.selection.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)

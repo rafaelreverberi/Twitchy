@@ -26,17 +26,15 @@ struct TVRootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if !model.startupComplete {
-                ProgressView("Twitchy").frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if (TVFixtures.screen?.hasPrefix("onboarding") == true) || (model.auth.session == nil && (!skippedOnboarding || signIn) && !TVFixtures.enabled) {
+            if (TVFixtures.screen?.hasPrefix("onboarding") == true) || (model.startupComplete && !model.isOffline && model.auth.session == nil && (!skippedOnboarding || signIn) && !TVFixtures.enabled) {
                 TVSignInView { signIn = false; skippedOnboarding = model.auth.session == nil }
             } else if let selection = model.selectedChannel {
                 NavigationStack { TVChannelView(selection: selection) }.id(selection.id)
             } else {
                 TabView(selection: $tab) {
-                    NavigationStack { TVHomeView() }.tag("Home").tabItem { Label("Home", systemImage: "house") }
-                    NavigationStack { TVChannelsView() }.tag("Channels").tabItem { Label("Channels", systemImage: "person.2") }
-                    NavigationStack { TVSearchView() }.tag("Search").tabItem { Label("Search", systemImage: "magnifyingglass") }
+                    NavigationStack { Group { if model.isOffline { OfflineDiscoveryView() } else { TVHomeView() } } }.tag("Home").tabItem { Label("Home", systemImage: "house") }
+                    NavigationStack { Group { if model.isOffline { OfflineDiscoveryView() } else { TVChannelsView() } } }.tag("Channels").tabItem { Label("Channels", systemImage: "person.2") }
+                    NavigationStack { Group { if model.isOffline { OfflineDiscoveryView() } else { TVSearchView() } } }.tag("Search").tabItem { Label("Search", systemImage: "magnifyingglass") }
                     NavigationStack { TVSettingsView { signIn = true } }.tag("Settings").tabItem { Label("Settings", systemImage: "gearshape") }
                 }
 
@@ -175,7 +173,7 @@ struct TVStreamCard: View {
     var body: some View {
         Button { model.selectedChannel = .init(login: stream.userLogin, name: stream.userName, broadcasterID: stream.userId, contentType: opensChannel ? nil : "live") } label: {
             VStack(alignment: .leading, spacing: 0) {
-                RemoteImage(stream.thumbnail).frame(height: 210).overlay(alignment: .bottomLeading) {
+                DiscoveryImage(stream.thumbnail).frame(height: 210).overlay(alignment: .bottomLeading) {
                     Text("LIVE · \(stream.viewerCount.formatted())").font(.system(size: 20, weight: .bold)).padding(10).background(.black.opacity(0.8), in: Capsule()).padding(16)
                 }.clipShape(RoundedRectangle(cornerRadius: 14))
                 VStack(alignment: .leading, spacing: 8) {
@@ -209,7 +207,7 @@ struct TVFeaturedStream: View {
             model.selectedChannel = .init(login: stream.userLogin, name: stream.userName, broadcasterID: stream.userId, contentType: "live")
         } label: {
             ZStack(alignment: .bottomLeading) {
-                RemoteImage(thumbnail).frame(height: 600)
+                DiscoveryImage(thumbnail).frame(height: 600)
                 LinearGradient(colors: [.clear, .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 18) {
@@ -233,7 +231,8 @@ struct TVHomeView: View {
     private var featured: TwitchStream? { model.recommendedStreams.first ?? model.followedStreams.first ?? model.streams.first }
     var body: some View {
         TVPage(title: "Watch now") {
-            if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
+            if model.libraryLoading { DiscoverySkeleton() }
+            else if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
             else {
                 if let featured { TVFeaturedStream(stream: featured, personalized: !model.recommendedStreams.isEmpty) }
                 if !model.recommendedStreams.isEmpty { TVStreamRow(title: "For you", streams: model.recommendedStreams) }
@@ -244,13 +243,12 @@ struct TVHomeView: View {
                     ScrollView(.horizontal) { HStack(spacing: 34) { ForEach(model.categories) { category in
                         NavigationLink { TVCategoryView(category: category) } label: {
                             VStack(alignment: .leading, spacing: 12) {
-                                RemoteImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).frame(width: 220, height: 294).clipShape(RoundedRectangle(cornerRadius: 14))
+                                DiscoveryImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).frame(width: 220, height: 294).clipShape(RoundedRectangle(cornerRadius: 14))
                                 Text(category.name).font(.system(size: 24, weight: .semibold)).lineLimit(1).padding(.horizontal, 16).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading)
                             }.frame(width: 220)
                         }.buttonStyle(.card)
                     } }.padding(16) }.frame(height: 430).padding(.horizontal, -16).focusSection()
                 }
-                if model.loading { ProgressView("Loading streams…") }
                 if let error = model.error { Text(error).foregroundStyle(.secondary) }
                 HStack(spacing: 30) {
                     Button("Refresh") { Task { await model.refresh() } }
@@ -277,7 +275,8 @@ struct TVChannelsView: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         TVPage(title: "Following") {
-            if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
+            if !model.startupComplete || (model.loading && model.channels.isEmpty) { DiscoverySkeleton(style: .channels) }
+            else if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
             else {
                 if !model.followedStreams.isEmpty { TVStreamRow(title: "Live now", streams: model.followedStreams, opensChannel: true) }
                 if model.channels.isEmpty { Text("Follow channels on Twitch to see them here.").foregroundStyle(.secondary) }
@@ -288,7 +287,7 @@ struct TVChannelsView: View {
                             model.selectedChannel = .init(login: channel.broadcasterLogin, name: channel.broadcasterName, broadcasterID: channel.id)
                         } label: {
                             HStack(spacing: 18) {
-                                RemoteImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 76, height: 76).clipShape(Circle())
+                                DiscoveryImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 76, height: 76).clipShape(Circle())
                                 Text(channel.broadcasterName).font(.system(size: 28, weight: .semibold)).lineLimit(1)
                                 if live { Label("LIVE", systemImage: "circle.fill").font(.system(size: 20, weight: .bold)).foregroundStyle(.red) }
                                 Spacer(minLength: 0)
@@ -327,17 +326,18 @@ struct TVSearchView: View {
     @State private var loading = false
     var body: some View {
         TVPage(title: "Search") {
-            if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
+            if !model.startupComplete { DiscoverySkeleton(style: .channels) }
+            else if model.api == nil && !TVFixtures.enabled { TVConnectPrompt() }
             else {
                 TextField("Search channels or games", text: $query).accessibilityIdentifier("tv.search").onSubmit { model.personal.searched(query) }
                 if query.isEmpty {
                     ForEach(model.personal.data.recentSearches, id: \.self) { item in Button(item) { query = item } }
                 }
-                if loading { ProgressView("Searching…") }
+                if loading { DiscoverySkeleton(style: .channels) }
                 if let error { Text(error).foregroundStyle(.secondary) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 380))], spacing: 32) {
                     ForEach(channels) { channel in Button { model.selectedChannel = .init(login: channel.broadcasterLogin, name: channel.displayName, broadcasterID: channel.id, contentType: channel.isLive ? "live" : nil) } label: {
-                        HStack(spacing: 20) { RemoteImage(URL(string: channel.thumbnailUrl), symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading, spacing: 8) { Text(channel.displayName).font(.system(size: 28, weight: .semibold)); Text(channel.isLive ? "LIVE" : "Offline").foregroundStyle(channel.isLive ? TwitchyTheme.live : .secondary).font(.system(size: 22)) }; Spacer() }.padding(20)
+                        HStack(spacing: 20) { DiscoveryImage(URL(string: channel.thumbnailUrl), symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading, spacing: 8) { Text(channel.displayName).font(.system(size: 28, weight: .semibold)); Text(channel.isLive ? "LIVE" : "Offline").foregroundStyle(channel.isLive ? TwitchyTheme.live : .secondary).font(.system(size: 22)) }; Spacer() }.padding(20)
                     }.buttonStyle(.card) }
                     ForEach(categories) { category in NavigationLink { TVCategoryView(category: category) } label: { Label(category.name, systemImage: "gamecontroller").font(.system(size: 28)).padding(25) }.buttonStyle(.card) }
                 }
@@ -355,7 +355,7 @@ struct TVSearchView: View {
                 guard query == text else { return }
                 channels = results.0.data; categories = results.1.data; loading = false
             } catch is CancellationError {} catch {
-                if !Task.isCancelled && query == text { self.error = error.localizedDescription; loading = false }
+                if !Task.isCancelled && query == text { self.error = error.localizedDescription; model.noteConnectionError(error); loading = false }
             }
         }
     }
@@ -368,9 +368,9 @@ struct TVSettingsView: View {
         TVPage(title: "Settings") {
             HStack(alignment: .top, spacing: 100) {
                 VStack(alignment: .leading, spacing: 28) {
-                    Text(model.user?.displayName ?? "Twitch account").font(.system(size: 34, weight: .semibold))
-                    Text(model.auth.status).foregroundStyle(.secondary)
-                    if model.auth.status != "Connected" { Button("Connect Twitch", action: signIn).buttonStyle(.borderedProminent) }
+                    Text(model.user?.displayName ?? model.auth.session?.login ?? "Twitch account").font(.system(size: 34, weight: .semibold))
+                    Text(model.accountStatus).foregroundStyle(.secondary)
+                    if !model.accountSignedIn { Button("Connect Twitch", action: signIn).buttonStyle(.borderedProminent) }
                     NavigationLink("Streaming sources") { TVSourcesView() }.accessibilityIdentifier("tv.sources")
                     Text(model.sources.active?.name ?? "No source selected").foregroundStyle(.secondary)
                     Divider()
@@ -587,7 +587,7 @@ struct TVChannelView: View {
                 Text(selection.name).font(.system(size: 48, weight: .semibold))
             }
             HStack(alignment: .center, spacing: 50) {
-                RemoteImage(stream?.thumbnail ?? profile.flatMap { URL(string: $0.offlineImageUrl ?? "") }).frame(width: 780, height: 438).clipShape(RoundedRectangle(cornerRadius: 18))
+                DiscoveryImage(stream?.thumbnail ?? profile.flatMap { URL(string: $0.offlineImageUrl ?? "") }).frame(width: 780, height: 438).clipShape(RoundedRectangle(cornerRadius: 18))
                 VStack(alignment: .leading, spacing: 24) {
                     if stream != nil { Label("LIVE", systemImage: "circle.fill").foregroundStyle(.red) } else { Text("Offline").foregroundStyle(.secondary) }
                     Text(selection.name).font(.system(size: 34, weight: .semibold)).lineLimit(3)
@@ -613,7 +613,7 @@ struct TVChannelView: View {
     }
     private func media(title: String, thumbnail: String, type: String, id: String) -> some View {
         Button { play(type: type, id: id) } label: {
-            VStack(alignment: .leading, spacing: 12) { RemoteImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "640").replacingOccurrences(of: "%{height}", with: "360"))).frame(width: 370, height: 210).clipShape(RoundedRectangle(cornerRadius: 14)); Text(title).font(.system(size: 25, weight: .semibold)).lineLimit(2).frame(height: 65, alignment: .topLeading).padding(.horizontal, 20).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading) }.frame(width: 370)
+            VStack(alignment: .leading, spacing: 12) { DiscoveryImage(URL(string: thumbnail.replacingOccurrences(of: "%{width}", with: "640").replacingOccurrences(of: "%{height}", with: "360"))).frame(width: 370, height: 210).clipShape(RoundedRectangle(cornerRadius: 14)); Text(title).font(.system(size: 25, weight: .semibold)).lineLimit(2).frame(height: 65, alignment: .topLeading).padding(.horizontal, 20).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading) }.frame(width: 370)
         }.buttonStyle(.card)
     }
     private func play(type: String, id: String?) {

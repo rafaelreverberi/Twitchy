@@ -8,9 +8,9 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                HStack(spacing: 20) { RemoteImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? "Connect your Twitch account").foregroundStyle(.secondary); Text(model.auth.status).font(.caption).foregroundStyle(TwitchyTheme.live) } }
-                if let error = model.auth.error { Notice(error) }
-                if model.auth.status != "Connected" { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
+                HStack(spacing: 20) { DiscoveryImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? model.auth.session?.login ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? model.auth.session.map { "@\($0.login)" } ?? "Connect your Twitch account").foregroundStyle(.secondary); Text(model.accountStatus).font(.caption).foregroundStyle(TwitchyTheme.live) } }
+                if let error = model.auth.error, !model.isOffline { Notice(error) }
+                if !model.accountSignedIn { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
                 else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
                 Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
                 Divider()
@@ -37,12 +37,12 @@ struct SettingsView: View {
             Form {
                 Section("Twitch account") {
                     Text(model.auth.session.map { "Signed in as @\($0.login)" } ?? "Connect your Twitch account").font(.headline)
-                    Text(model.auth.status).foregroundStyle(.secondary)
+                    Text(model.accountStatus).foregroundStyle(.secondary)
                     if model.auth.deviceCode == nil {
-                        if model.auth.status != "Connected" {
+                        if !model.accountSignedIn {
                             Button("Sign in with Twitch") { Task { await model.login() } }.disabled(model.auth.isSigningIn).accessibilityIdentifier("oauth.signIn")
                         }
-                        if model.auth.status == "Connected", model.auth.session?.scopes.contains("user:read:chat") == false {
+                        if !model.isOffline, model.auth.status == "Connected", model.auth.session?.scopes.contains("user:read:chat") == false {
                             Button("Enable Twitch chat") { Task { await model.login(chat: true) } }
                         }
                     }
@@ -56,7 +56,7 @@ struct SettingsView: View {
                     }
                     Text("Your sign-in is stored securely on this device and renewed automatically.").font(.caption).foregroundStyle(.secondary)
                     if model.auth.session != nil { Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.auth.logout(); await model.refresh() } } }
-                    if let error = model.auth.error { Notice(error) }
+                    if let error = model.auth.error, !model.isOffline { Notice(error) }
                 }
                 Section("Advanced") {
                     #if os(tvOS)
