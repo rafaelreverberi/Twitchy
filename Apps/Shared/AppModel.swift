@@ -6,9 +6,14 @@ import TwitchySources
 import TwitchyPlayback
 import TwitchyChat
 import AVKit
+import Network
 
 @MainActor @Observable final class AppModel {
+    #if DEBUG
+    let auth = TwitchAuthManager(secrets: ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] != nil ? DiscoveryFixtureSecrets() : KeychainStore(service: "com.rafaelreverberi.Twitchy.twitch"))
+    #else
     let auth = TwitchAuthManager()
+    #endif
     #if DEBUG && os(tvOS) && targetEnvironment(simulator)
     let sources = StreamingSourceManager(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-sources-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: TVFixtures.sourceSecrets)
     #else
@@ -19,7 +24,7 @@ import AVKit
     #elseif DEBUG && os(tvOS) && targetEnvironment(simulator)
     let personal = PersonalStore(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-personal-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #elseif DEBUG && os(macOS)
-    let personal = PersonalStore(url: ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil ? URL.temporaryDirectory.appendingPathComponent("Twitchy-companion-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
+    let personal = PersonalStore(url: (ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil || ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] != nil) ? URL.temporaryDirectory.appendingPathComponent("Twitchy-companion-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #else
     let personal = PersonalStore()
     #endif
@@ -32,7 +37,6 @@ import AVKit
     #endif
     #if os(tvOS)
     var tvCompanionBroadcasterID: String?
-    var startupComplete = false
     #endif
     #if os(iOS)
     var isMobileFixture: Bool {
@@ -42,9 +46,60 @@ import AVKit
         false
         #endif
     }
-    var startupComplete = false
     @ObservationIgnored lazy var mobile = MobilePlaybackCoordinator(model: self)
     #endif
+    var startupComplete = false
+    var isOffline: Bool { networkOffline || auth.connectionUnavailable || libraryUnavailable }
+    var accountSignedIn: Bool { auth.session != nil }
+    var accountStatus: String { accountSignedIn && isOffline ? "Signed in · Offline" : auth.status }
+    var libraryLoading: Bool { !startupComplete || (loading && streams.isEmpty && followedStreams.isEmpty) }
+    var isDiscoveryFixture: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] != nil { return true }
+        #endif
+        #if os(iOS)
+        return isMobileFixture
+        #elseif os(tvOS)
+        return TVFixtures.enabled
+        #else
+        return ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil
+        #endif
+    }
+    private var libraryUnavailable = false
+    var networkOffline = false
+    @ObservationIgnored private var connectivityMonitor: NWPathMonitor?
+    @ObservationIgnored private var pendingReconnect = false
+    private func startConnectivityMonitoring() {
+        guard connectivityMonitor == nil, !isDiscoveryFixture else { return }
+        let monitor = NWPathMonitor()
+        connectivityMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            let offline = path.status != .satisfied
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let reconnecting = self.networkOffline && !offline
+                self.networkOffline = offline
+                if reconnecting {
+                    if self.startupComplete { await self.restoreLibrary() }
+                    else { self.pendingReconnect = true }
+                }
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "Twitchy.connectivity"))
+    }
+    func restoreLibrary() async {
+        guard !networkOffline, !loading else { return }
+        libraryUnavailable = false
+        if auth.session == nil { await auth.restore() }
+        else { do { try await auth.validate() } catch { noteConnectionError(error) } }
+        await refresh()
+    }
+    func noteConnectionError(_ error: Error) {
+        if let error = error as? URLError, [.notConnectedToInternet, .networkConnectionLost].contains(error.code) { libraryUnavailable = true }
+    }
+    private var accountCache: AccountProfileCache {
+        AccountProfileCache(url: TwitchyStoragePaths.directory.appendingPathComponent("account-profile.json"))
+    }
     @ObservationIgnored lazy var sync = AppDataSync(personal: personal, sources: sources, cloud: makeCloudStore())
     private func makeCloudStore() -> CloudSyncStore {
         #if DEBUG && os(tvOS) && targetEnvironment(simulator)
@@ -192,28 +247,41 @@ import AVKit
     private var cachedAPI: TwitchAPIClient?
     private var cachedToken: String?
     var api: TwitchAPIClient? {
-        guard let session = auth.session, !session.isExpired, auth.status == "Connected" else { return nil }
+        guard !isOffline, let session = auth.session, !session.isExpired, auth.status == "Connected" else { return nil }
         if cachedToken != session.accessToken { cachedAPI = TwitchAPIClient(clientID: session.clientID, token: session.accessToken); cachedToken = session.accessToken }
         return cachedAPI
     }
     var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async {
+        startConnectivityMonitoring()
+        defer { startupComplete = true }
+        #if DEBUG
+        if let fixture = ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] {
+            personal.data.onboardingComplete = true
+            networkOffline = fixture == "offline"
+            if networkOffline {
+                await auth.restore(validateOnline: false)
+                user = try? JSONCoding.decoder().decode(TwitchUser.self, from: Data(#"{"id":"fixture-account","login":"offlineviewer","display_name":"Offline viewer","profile_image_url":"","description":""}"#.utf8))
+            } else { try? await Task.sleep(for: .seconds(20)) }
+            return
+        }
+        #endif
         #if DEBUG && os(macOS)
         if ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil {
             personal.data.onboardingComplete = true
             return
         }
         #endif
-        #if os(tvOS)
-        defer { startupComplete = true }
-        #endif
         #if DEBUG && os(tvOS) && targetEnvironment(simulator)
         if TVFixtures.enabled { TVFixtures.load(self); return }
         #endif
-        #if os(iOS)
-        defer { startupComplete = true }
-        #endif
         #if DEBUG && os(iOS) && targetEnvironment(simulator)
+        if let home = ProcessInfo.processInfo.environment["TWITCHY_UI_HOME_FIXTURE"] {
+            personal.data.onboardingComplete = true
+            networkOffline = home == "offline"
+            try? await Task.sleep(for: .seconds(home == "offline" ? 30 : 8))
+            return
+        }
         if ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil {
             personal.data.onboardingComplete = true
             return
@@ -245,9 +313,18 @@ import AVKit
             if personal.data.oauthSettings == nil { saveOAuthSettings() }
             do { try sync.start(); applyOAuthSettings() } catch { self.error = "Local sync data could not be applied." }
         }
-        await auth.restore()
-        await sync.sync()
+        await auth.restore(validateOnline: false)
+        if let session = auth.session, !isDiscoveryFixture { user = accountCache.load(userID: session.userID) }
+        if !networkOffline {
+            do { try await auth.validate() } catch { noteConnectionError(error) }
+        }
         await refresh()
+        startupComplete = true
+        if pendingReconnect {
+            pendingReconnect = false
+            await restoreLibrary()
+        }
+        await sync.sync()
     }
     func login(chat: Bool = false, presentSettings: Bool = true) async {
         guard !auth.isSigningIn else {
@@ -269,13 +346,23 @@ import AVKit
     private var refreshID = UUID()
     func refresh() async {
         let current = UUID(); refreshID = current
-        guard let api, let session = auth.session else { cachedAPI = nil; cachedToken = nil; streams = []; followedStreams = []; interestStreams = []; channels = []; categories = []; user = nil; avatars = [:]; loading = false; return }
+        guard !isOffline, let api, let session = auth.session else {
+            if auth.session == nil {
+                cachedAPI = nil; cachedToken = nil; streams = []; followedStreams = []; interestStreams = []; channels = []; categories = []; user = nil; avatars = [:]
+                if !isDiscoveryFixture { accountCache.clear() }
+            }
+            loading = false
+            return
+        }
         loading = true; error = nil; defer { if refreshID == current { loading = false } }
         do {
             async let profile = api.currentUser()
             async let popular = api.streams()
             async let games = api.topCategories()
             let newUser = try await profile
+            guard refreshID == current, auth.session?.accessToken == session.accessToken else { return }
+            user = newUser
+            if !isDiscoveryFixture { try? accountCache.save(newUser) }
             let popularPage = try await popular
             let categoryPage = try await games
             var newChannels: [FollowedChannel] = []
@@ -300,11 +387,11 @@ import AVKit
             }
             try Task.checkCancellation()
             guard refreshID == current, auth.session?.accessToken == session.accessToken else { return }
-            user = newUser; streams = popularPage.data; streamsCursor = popularPage.pagination?.cursor; categories = categoryPage.data
+            streams = popularPage.data; streamsCursor = popularPage.pagination?.cursor; categories = categoryPage.data
             channels = newChannels; followedStreams = newLive; channelsCursor = nextChannels; avatars = newAvatars
             await refreshInterests()
         } catch is CancellationError { }
-        catch { if refreshID == current, auth.session?.accessToken == session.accessToken { self.error = error.localizedDescription } }
+        catch { if refreshID == current, auth.session?.accessToken == session.accessToken { self.error = error.localizedDescription; noteConnectionError(error) } }
     }
     func moreChannels() async {
         guard let cursor = channelsCursor, let api, let user = auth.session else { return }
@@ -361,4 +448,13 @@ struct DesktopNowPlaying: Identifiable {
 
 #if os(iOS)
 extension ChannelSelection: Hashable {}
+#endif
+
+#if DEBUG
+private final class DiscoveryFixtureSecrets: SecretStore, @unchecked Sendable {
+    private var session: Data? = Data(#"{"accessToken":"fixture-only","clientID":"fixture","userID":"fixture-account","login":"offlineviewer","scopes":[],"expiresAt":2000000000}"#.utf8)
+    func read(_ key: String) throws -> Data? { key == "session" ? session : nil }
+    func write(_ data: Data, key: String) throws { if key == "session" { session = data } }
+    func delete(_ key: String) throws { if key == "session" { session = nil } }
+}
 #endif

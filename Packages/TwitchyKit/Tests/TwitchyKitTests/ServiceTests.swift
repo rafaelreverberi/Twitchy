@@ -125,6 +125,37 @@ func rejectedSourceURLs(_ value: String) { #expect(throws: (any Error).self) { t
     let manager = TwitchAuthManager(secrets: secrets, transport: FixtureTransport(["{}"], statuses: [401])); await manager.restore()
     #expect(manager.session == nil); #expect(try secrets.read("session") == nil)
 }
+@Test @MainActor func offlineAccountRestorationKeepsExpiredSessionWithoutRequests() async throws {
+    let secrets = MemorySecrets()
+    let session = AuthSession(accessToken: "test", refreshToken: "renew", clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)
+    try secrets.write(JSONEncoder().encode(session), key: "session")
+    let transport = FixtureTransport([])
+    let manager = TwitchAuthManager(secrets: secrets, transport: transport)
+    await manager.restore(validateOnline: false)
+    #expect(manager.session?.login == "alice")
+    #expect(manager.session?.isExpired == true)
+    #expect(manager.status == "Signed in")
+    #expect(await transport.requests.isEmpty)
+    await manager.restore()
+    #expect(manager.connectionUnavailable)
+    #expect(manager.session?.login == "alice")
+    #expect(try secrets.read("session") != nil)
+    await manager.logout()
+    #expect(manager.session == nil)
+    #expect(!manager.connectionUnavailable)
+}
+@Test func publicAccountCacheSurvivesRelaunchAndRejectsOtherAccounts() throws {
+    let directory = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("account.json")
+    let profile = try JSONCoding.decoder().decode(TwitchUser.self, from: Data(#"{"id":"1","login":"alice","display_name":"Alice","profile_image_url":"https://example.com/avatar.png","description":""}"#.utf8))
+    try AccountProfileCache(url: file).save(profile)
+    let restored = AccountProfileCache(url: file)
+    #expect(restored.load(userID: "1")?.displayName == "Alice")
+    #expect(restored.load(userID: "2") == nil)
+    restored.clear()
+    #expect(restored.load(userID: "1") == nil)
+}
 @Test @MainActor func tokenValidationIdentityAndExpiry() async throws {
     let secrets = MemorySecrets(); let session = AuthSession(accessToken: "test", refreshToken: nil, clientID: "id", userID: "1", login: "alice", scopes: [], expiresAt: .distantPast)
     try secrets.write(JSONEncoder().encode(session), key: "session")

@@ -48,6 +48,10 @@ public struct OAuthAttempt: Sendable {
     public private(set) var deviceCode: DeviceCode?
     public private(set) var status = "Not connected"
     public private(set) var error: String?
+    public private(set) var connectionUnavailable = false
+    private func noteConnectionError(_ error: Error) {
+        if let error = error as? URLError, [.notConnectedToInternet, .networkConnectionLost].contains(error.code) { connectionUnavailable = true }
+    }
     private let secrets: any SecretStore
     private let http: HTTPClient
     private var generation = UUID()
@@ -58,13 +62,19 @@ public struct OAuthAttempt: Sendable {
     private var validationID = UUID()
     public var isSigningIn: Bool { status == "Signing in" || deviceCode != nil }
     public init(secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.twitch"), transport: any HTTPTransport = NetworkTransport()) { self.secrets = secrets; http = HTTPClient(transport: transport); super.init() }
-    public func restore() async {
+    public func restore(validateOnline: Bool = true) async {
+        connectionUnavailable = false
         let current = generation
         do {
-            if let bytes = try secrets.read("session") { session = try JSONDecoder().decode(AuthSession.self, from: bytes); try await validate() }
-        } catch { if generation == current { self.error = error.localizedDescription; status = "Sign-in needs attention" } }
+            if let bytes = try secrets.read("session") {
+                session = try JSONDecoder().decode(AuthSession.self, from: bytes)
+                if validateOnline { try await validate() }
+                else { status = "Signed in" }
+            }
+        } catch { if generation == current { self.error = error.localizedDescription; noteConnectionError(error); status = "Sign-in needs attention" } }
     }
     public func validate() async throws {
+        connectionUnavailable = false
         if let operation = validationOperation { return try await operation.value }
         let id = UUID(); validationID = id
         let operation = Task { try await self.validateStoredSession() }
@@ -74,6 +84,7 @@ public struct OAuthAttempt: Sendable {
         catch {
             if validationID == id, !(error is CancellationError) {
                 self.error = error.localizedDescription
+                noteConnectionError(error)
                 status = session == nil ? "Sign in again" : "Connection needs attention"
             }
             throw error
@@ -238,6 +249,7 @@ public struct OAuthAttempt: Sendable {
         } catch { if generation == current { self.error = error.localizedDescription; status = session == nil ? "Not connected" : "Connection needs attention" } }
     }
     public func logout() async {
+        connectionUnavailable = false
         generation = UUID(); cancelValidationOperation()
         validationTask?.cancel(); validationTask = nil; deviceTask?.cancel(); deviceTask = nil; deviceCode = nil
         #if !os(tvOS)

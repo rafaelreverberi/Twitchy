@@ -28,7 +28,12 @@ enum TVFixtures {
         nil
         #endif
     }
-    static var enabled: Bool { screen != nil }
+    static var enabled: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] != nil { return true }
+        #endif
+        return screen != nil
+    }
     #if DEBUG && targetEnvironment(simulator)
     private static func decode<T: Decodable>(_ text: String) -> T { try! JSONCoding.decoder().decode(T.self, from: Data(text.utf8)) }
     static var streams: [TwitchStream] { (0..<8).map { i in decode("""

@@ -10,37 +10,30 @@ struct MobileRootView: View {
     @State private var tab: Destination = .home
     @State private var showingCompanion = false
     var body: some View {
-        Group {
-            if !model.startupComplete {
-                VStack(spacing: 18) { BrandMark(); ProgressView("Loading your library…") }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                TabView(selection: $tab) {
-                    ForEach(Destination.allCases) { destination in
-                        NavigationStack {
-                            MobileTabContent(destination: destination)
-                                .navigationTitle(destination.rawValue)
-                                .navigationBarTitleDisplayMode(.large)
-                                .toolbar {
-                                    ToolbarItem(placement: .topBarTrailing) {
-                                        if destination == .home {
-                                            Button { showingCompanion = true } label: { Image(systemName: "tv") }
-                                                .accessibilityLabel("Companion Mode").accessibilityIdentifier("companion.open")
-                                        }
-                                    }
-                                    ToolbarItem(placement: .topBarTrailing) {
-                                    Button { model.showingSettings = true } label: { Image(systemName: "gearshape") }
-                                        .accessibilityLabel("Settings").accessibilityIdentifier("settings.open")
-                                } }
-                                .navigationDestination(item: channelBinding(for: destination)) { selection in
-                                    MobileChannelView(selection: selection)
-                                        .toolbar(.visible, for: .navigationBar)
-                                        .toolbar(.hidden, for: .tabBar)
+        TabView(selection: $tab) {
+            ForEach(Destination.allCases) { destination in
+                NavigationStack {
+                    MobileTabContent(destination: destination, goToDownloads: { tab = .downloads })
+                        .navigationTitle(destination.rawValue)
+                        .navigationBarTitleDisplayMode(.large)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                if destination == .home {
+                                    Button { showingCompanion = true } label: { Image(systemName: "tv") }
+                                        .accessibilityLabel("Companion Mode").accessibilityIdentifier("companion.open")
                                 }
+                            }
+                            ToolbarItem(placement: .topBarTrailing) {
+                            Button { model.showingSettings = true } label: { Image(systemName: "gearshape") }
+                                .accessibilityLabel("Settings").accessibilityIdentifier("settings.open")
+                        } }
+                        .navigationDestination(item: channelBinding(for: destination)) { selection in
+                            MobileChannelView(selection: selection)
+                                .toolbar(.visible, for: .navigationBar)
+                                .toolbar(.hidden, for: .tabBar)
                         }
-                        .tabItem { Label(destination.rawValue, systemImage: destination.icon) }.tag(destination)
-                    }
                 }
+                .tabItem { Label(destination.rawValue, systemImage: destination.icon) }.tag(destination)
             }
         }
         .defaultAppStorage(settingsStore)
@@ -74,14 +67,19 @@ struct MobileRootView: View {
 private struct MobileTabContent: View {
     @Environment(AppModel.self) private var model
     let destination: Destination
+    var goToDownloads: () -> Void
     var body: some View {
         Group {
+            if model.isOffline && [.home, .channels, .search].contains(destination) {
+                OfflineDiscoveryView(goToDownloads: goToDownloads)
+            } else {
             switch destination {
             case .home: HomeView()
             case .channels: ChannelsView()
             case .search: SearchView()
             case .downloads: DownloadsView()
             case .profile: ProfileView()
+            }
             }
         }
         .safeAreaInset(edge: .bottom) { if model.mobile.selection != nil { Color.clear.frame(height: 70) } }

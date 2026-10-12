@@ -36,6 +36,7 @@ struct RootView: View {
             }
         }
         .task {
+            guard !model.isDiscoveryFixture else { return }
             #if DEBUG && os(macOS)
             guard ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] == nil else { return }
             #endif
@@ -63,16 +64,10 @@ struct RootView: View {
             if phase == .active { model.mobile.enterForeground() }
             #endif
             if phase == .active { Task {
-                #if DEBUG && os(macOS)
-                guard ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] == nil else { return }
-                #endif
-                #if os(iOS)
-                guard !model.isMobileFixture else { return }
-                #endif
-                #if os(tvOS)
-                guard !TVFixtures.enabled else { return }
-                #endif
-                await model.sync.sync(); await model.refreshInterests(); do { try await model.auth.validate() } catch { model.error = error.localizedDescription }
+                guard model.startupComplete, !model.isDiscoveryFixture else { return }
+                await model.restoreLibrary()
+                await model.sync.sync()
+                await model.refreshInterests()
             } }
             if phase == .background {
                 model.chat.disconnect()
@@ -91,8 +86,8 @@ struct RootView: View {
             if !active, scenePhase == .background { Task { await model.playback.stop() } }
             #endif
         }
-        .onChange(of: model.auth.status) { _, _ in Task { await model.refresh() } }
-        .onChange(of: model.auth.session?.accessToken) { _, _ in Task { await model.refresh() } }
+        .onChange(of: model.auth.status) { _, _ in Task { if model.startupComplete { await model.refresh() } } }
+        .onChange(of: model.auth.session?.accessToken) { _, _ in Task { if model.startupComplete { await model.refresh() } } }
         .onChange(of: model.sources.active?.baseURL) { _, _ in
             #if os(macOS)
             if !model.isOfflinePlayback { model.stopDesktopPlayback() }
@@ -150,6 +145,8 @@ struct RootView: View {
                     if let selection = model.selectedChannel {
                         if let item = model.offlineDownload, selection.offlineDownloadID == item.id { DesktopOfflineWatchView(item: item) }
                         else { ChannelDetail(selection: selection).id(selection.id) }
+                    } else if model.isOffline && (destination == nil || [.home, .channels, .search].contains(destination!)) {
+                        OfflineDiscoveryView { destination = .downloads }
                     } else if destination == .home || destination == nil {
                         MacHomeView()
                     } else { screen(destination!) }
@@ -254,17 +251,29 @@ struct LoginPrompt: View {
 }
 struct HomeView: View {
     @Environment(AppModel.self) private var model
+    private var showingSkeleton: Bool {
+        model.libraryLoading
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 8) { Text("Your live lineup").font(.title.bold()); Text("Your channels. New discoveries.").foregroundStyle(.secondary) }; Spacer(); if model.loading { ProgressView() } else { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh streams") } }
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your live lineup").font(.title.bold())
+                        Text("Your channels. New discoveries.").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button { Task { await model.restoreLibrary() } } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel("Refresh streams").disabled(model.loading || showingSkeleton)
+                }
+                if showingSkeleton { DiscoverySkeleton() }
+                if !showingSkeleton {
                 if let error = model.error { Notice(error) }
                 if model.api == nil { LoginPrompt() }
                 else {
                     #if os(iOS)
                     if let featured = model.recommendedStreams.first ?? model.followedStreams.first ?? model.streams.first {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("In the spotlight").font(.title2.bold())
                             StreamCard(stream: featured)
                         }
                     }
@@ -284,11 +293,12 @@ struct HomeView: View {
                     StreamSection(title: "Popular right now", streams: model.streams)
                     if model.streamsCursor != nil { Button("Load more streams") { Task { await model.moreStreams() } } }
                     Text("Popular categories").font(.title2.bold())
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190))], spacing: 20) { ForEach(model.categories) { category in NavigationLink { CategoryDetail(category: category) } label: { VStack(alignment: .leading) { RemoteImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).aspectRatio(0.75, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 10)); Text(category.name).font(.headline).lineLimit(1) } }.buttonStyle(.plain) } }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190))], spacing: 20) { ForEach(model.categories) { category in NavigationLink { CategoryDetail(category: category) } label: { VStack(alignment: .leading) { DiscoveryImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).aspectRatio(0.75, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 10)); Text(category.name).font(.headline).lineLimit(1) } }.buttonStyle(.plain) } }
                     if model.streams.isEmpty && !model.loading { EmptyState("No streams loaded", detail: "Refresh to try Twitch again.") }
                 }
+                }
             }.padding(24)
-        }.refreshable { await model.refresh() }
+        }.refreshable { await model.restoreLibrary() }
     }
 
     #if os(tvOS)
@@ -297,6 +307,7 @@ struct HomeView: View {
 }
 struct StreamSection: View {
     var title: String; var streams: [TwitchStream]
+    var onSelect: ((TwitchStream) -> Void)? = nil
     private var columns: [GridItem] {
         #if os(iOS)
         [GridItem(.adaptive(minimum: 155, maximum: 440))]
@@ -304,15 +315,17 @@ struct StreamSection: View {
         [GridItem(.adaptive(minimum: 270, maximum: 440))]
         #endif
     }
-    var body: some View { VStack(alignment: .leading, spacing: 16) { Text(title).font(.title2.bold()); LazyVGrid(columns: columns, spacing: 24) { ForEach(streams) { StreamCard(stream: $0) } } } }
+    var body: some View { VStack(alignment: .leading, spacing: 16) { Text(title).font(.title2.bold()); LazyVGrid(columns: columns, spacing: 24) { ForEach(streams) { StreamCard(stream: $0, onSelect: onSelect) } } } }
 }
 struct StreamCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let stream: TwitchStream
+    var onSelect: ((TwitchStream) -> Void)? = nil
     @State private var hovered = false
     var body: some View {
         Button {
+            if let onSelect { onSelect(stream); return }
             #if os(iOS)
             model.mobile.start(.init(login: stream.userLogin, name: stream.userName, broadcasterID: stream.userId), title: stream.title, category: stream.gameName, avatar: model.avatars[stream.userId])
             #else
@@ -320,7 +333,7 @@ struct StreamCard: View {
             #endif
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                RemoteImage(stream.thumbnail).aspectRatio(16 / 9, contentMode: .fit).overlay(alignment: .topLeading) { Text("LIVE").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 5).background(TwitchyTheme.live, in: RoundedRectangle(cornerRadius: 5)).foregroundStyle(.black).padding(10) }.overlay(alignment: .bottomLeading) { Text("\(stream.viewerCount.formatted()) viewers").font(.caption).padding(6).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 4)).padding(10) }.clipShape(RoundedRectangle(cornerRadius: 12))
+                DiscoveryImage(stream.thumbnail).aspectRatio(16 / 9, contentMode: .fit).overlay(alignment: .topLeading) { Text("LIVE").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 5).background(TwitchyTheme.live, in: RoundedRectangle(cornerRadius: 5)).foregroundStyle(.black).padding(10) }.overlay(alignment: .bottomLeading) { Text("\(stream.viewerCount.formatted()) viewers").font(.caption).padding(6).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 4)).padding(10) }.clipShape(RoundedRectangle(cornerRadius: 12))
                 Text(stream.userName).font(.headline).foregroundStyle(.primary)
                 Text(stream.title).lineLimit(2).font(.subheadline).foregroundStyle(.primary)
                 Text(stream.gameName).font(.caption).foregroundStyle(.secondary)
@@ -337,7 +350,8 @@ struct ChannelsView: View {
     @State private var filter = ""
     var body: some View {
         Group {
-            if model.api == nil { LoginPrompt() }
+            if !model.startupComplete || (model.loading && model.channels.isEmpty) { DiscoverySkeleton(style: .channels).padding(24) }
+            else if model.api == nil { LoginPrompt() }
             else {
                 List {
                     if let error = model.error { Notice(error) }
@@ -345,7 +359,7 @@ struct ChannelsView: View {
                     ForEach(model.channels.filter { filter.isEmpty || $0.broadcasterName.localizedCaseInsensitiveContains(filter) }) { channel in
                         let live = model.followedStreams.first { $0.userId == channel.id }
                         Button { model.open(login: channel.broadcasterLogin, name: channel.broadcasterName, id: channel.id) } label: {
-                            HStack { RemoteImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 44, height: 44).clipShape(Circle()); VStack(alignment: .leading) { Text(channel.broadcasterName).font(.headline); Text(live?.gameName ?? "Offline").font(.caption).foregroundStyle(.secondary) }; Spacer(); if let live { Text("LIVE · \(live.viewerCount.formatted())").font(.caption.bold()).foregroundStyle(TwitchyTheme.live) } }
+                            HStack { DiscoveryImage(model.avatars[channel.id], symbol: "person.crop.circle").frame(width: 44, height: 44).clipShape(Circle()); VStack(alignment: .leading) { Text(channel.broadcasterName).font(.headline); Text(live?.gameName ?? "Offline").font(.caption).foregroundStyle(.secondary) }; Spacer(); if let live { Text("LIVE · \(live.viewerCount.formatted())").font(.caption.bold()).foregroundStyle(TwitchyTheme.live) } }
                         }.buttonStyle(.plain).padding(.vertical, 6)
                     }
                     if model.channelsCursor != nil { Button("Load more channels") { Task { await model.moreChannels() } } }
@@ -364,3 +378,132 @@ struct CategoryDetail: View {
     private func load(more: Bool) async { do { guard let api = model.api else { return }; let page = try await api.streams(gameID: category.id, after: more ? cursor : nil); streams = more ? streams + page.data : page.data; cursor = page.pagination?.cursor } catch { self.error = error.localizedDescription } }
 }
 #Preview { RootView().environment(AppModel()) }
+
+struct DiscoveryImage: View {
+    let url: URL?
+    var symbol = "play.rectangle"
+    init(_ url: URL?, symbol: String = "play.rectangle") { self.url = url; self.symbol = symbol }
+    var body: some View {
+        AsyncImage(url: url) { phase in
+            if let image = phase.image { image.resizable().scaledToFill() }
+            else if phase.error != nil || url == nil {
+                Rectangle().fill(TwitchyTheme.secondary)
+                    .overlay { Image(systemName: symbol).foregroundStyle(.secondary) }
+            } else {
+                Rectangle().fill(TwitchyTheme.secondary).modifier(DiscoveryShimmer())
+            }
+        }.clipped()
+    }
+}
+
+struct DiscoverySkeleton: View {
+    enum Style { case home, channels }
+    var style: Style = .home
+    private var minimumWidth: CGFloat {
+        #if os(tvOS)
+        380
+        #elseif os(macOS)
+        270
+        #else
+        155
+        #endif
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            if style == .home {
+                #if os(iOS)
+            card
+                #else
+                HStack(alignment: .center, spacing: 32) {
+                    mediaPlaceholder.frame(maxWidth: 850)
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("Channel name").font(.title.bold())
+                        Text("Stream title goes here").font(.headline)
+                        Text("Category").font(.subheadline)
+                    }.redacted(reason: .placeholder).modifier(DiscoveryShimmer())
+                    Spacer()
+                }
+                #endif
+            Text("Popular right now").font(.title2.bold())
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumWidth, maximum: 520))], spacing: 24) {
+                ForEach(0..<4) { _ in card }
+            }
+            Text("Popular categories").font(.title2.bold())
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190))], spacing: 20) {
+                ForEach(0..<3) { _ in
+                    RoundedRectangle(cornerRadius: 10).fill(TwitchyTheme.secondary)
+                        .aspectRatio(0.75, contentMode: .fit).modifier(DiscoveryShimmer())
+                }
+            }
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumWidth))], spacing: 24) {
+                    ForEach(0..<8) { _ in
+                        HStack(spacing: 16) {
+                            Circle().fill(TwitchyTheme.secondary).frame(width: 64, height: 64)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Channel name").font(.headline)
+                                Text("Channel details").font(.subheadline)
+                            }.redacted(reason: .placeholder)
+                            Spacer()
+                        }.modifier(DiscoveryShimmer())
+                    }
+                }
+            }
+        }.accessibilityElement(children: .ignore)
+            .accessibilityLabel(style == .home ? "Loading streams" : "Loading channels")
+            .accessibilityIdentifier(style == .home ? "home.skeleton" : "channels.skeleton")
+    }
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            RoundedRectangle(cornerRadius: 12).fill(TwitchyTheme.secondary).aspectRatio(16 / 9, contentMode: .fit)
+            Text("Channel name").font(.headline)
+            Text("Stream title goes here").font(.subheadline).lineLimit(2)
+            Text("Category").font(.caption)
+        }.redacted(reason: .placeholder).modifier(DiscoveryShimmer())
+    }
+    private var mediaPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 12).fill(TwitchyTheme.secondary)
+            .aspectRatio(16 / 9, contentMode: .fit).modifier(DiscoveryShimmer())
+    }
+}
+
+struct OfflineDiscoveryView: View {
+    @Environment(AppModel.self) private var model
+    var goToDownloads: (() -> Void)? = nil
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("You’re offline").font(.largeTitle.bold()).multilineTextAlignment(.center)
+                .accessibilityIdentifier("discovery.offline")
+            #if os(tvOS)
+            Button("Try again") { Task { await model.restoreLibrary() } }
+                .buttonStyle(.borderedProminent).accessibilityIdentifier("discovery.retry")
+            #else
+            if let goToDownloads {
+                Button("Go to Downloads", action: goToDownloads)
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("home.downloads")
+            }
+            #endif
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(32)
+            .background(TwitchyTheme.background).accessibilityElement(children: .contain)
+    }
+}
+
+struct DiscoveryShimmer: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moving = false
+    private var animated: Bool { !reduceMotion && !model.personal.data.preferences.reduceMotion }
+    func body(content: Content) -> some View {
+        content.overlay {
+            if animated {
+                GeometryReader { geometry in
+                    LinearGradient(colors: [.clear, .white.opacity(0.12), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: geometry.size.width * 0.6)
+                        .offset(x: moving ? geometry.size.width : -geometry.size.width * 0.6)
+                        .animation(.linear(duration: 1.35).repeatForever(autoreverses: false), value: moving)
+                        .onAppear { moving = true }
+                }.mask(content).allowsHitTesting(false)
+            }
+        }
+    }
+}

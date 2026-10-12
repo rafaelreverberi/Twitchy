@@ -25,19 +25,20 @@ struct SearchView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Picker("Search for", selection: $kind) { Text("Channels").tag("Channels"); Text("Live channels").tag("Live channels"); Text("Categories").tag("Categories") }.pickerStyle(.segmented)
-                if !canBrowse { LoginPrompt() }
+                if !model.startupComplete { DiscoverySkeleton(style: .channels) }
+                else if !canBrowse { LoginPrompt() }
                 else if query.isEmpty {
                     Text("Recent searches").font(.title2.bold())
                     ForEach(model.personal.data.recentSearches, id: \.self) { text in Button { query = text } label: { Label(text, systemImage: "clock") } }
                     EmptyState("Find your next stream", detail: "Search channels or categories. Videos and clips are available inside channel details.", symbol: "magnifyingglass")
                 } else {
-                    if loading { ProgressView("Searching Twitch…") }
+                    if loading { DiscoverySkeleton(style: .channels) }
                     if let error { Notice(error) }
                     if kind == "Categories" {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200))]) { ForEach(categories) { category in NavigationLink { CategoryDetail(category: category) } label: { VStack { RemoteImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).aspectRatio(0.75, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12)); Text(category.name).font(.headline) } }.buttonStyle(.plain) } }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200))]) { ForEach(categories) { category in NavigationLink { CategoryDetail(category: category) } label: { VStack { DiscoveryImage(URL(string: category.boxArtUrl.replacingOccurrences(of: "{width}", with: "285").replacingOccurrences(of: "{height}", with: "380"))).aspectRatio(0.75, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12)); Text(category.name).font(.headline) } }.buttonStyle(.plain) } }
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400))], spacing: 20) {
-                            ForEach(channels) { channel in Button { open(channel) } label: { HStack { RemoteImage(URL(string: channel.thumbnailUrl), symbol: "person.crop.circle").frame(width: 64, height: 64).clipShape(Circle()); VStack(alignment: .leading, spacing: 5) { Text(channel.displayName).font(.headline); Text(channel.gameName).font(.caption).foregroundStyle(.secondary); Text(channel.isLive ? "LIVE" : "Offline").font(.caption.bold()).foregroundStyle(channel.isLive ? TwitchyTheme.live : TwitchyTheme.muted) }; Spacer() }.padding(12).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12)) }.buttonStyle(.plain) }
+                            ForEach(channels) { channel in Button { open(channel) } label: { HStack { DiscoveryImage(URL(string: channel.thumbnailUrl), symbol: "person.crop.circle").frame(width: 64, height: 64).clipShape(Circle()); VStack(alignment: .leading, spacing: 5) { Text(channel.displayName).font(.headline); Text(channel.gameName).font(.caption).foregroundStyle(.secondary); Text(channel.isLive ? "LIVE" : "Offline").font(.caption.bold()).foregroundStyle(channel.isLive ? TwitchyTheme.live : TwitchyTheme.muted) }; Spacer() }.padding(12).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12)) }.buttonStyle(.plain) }
                         }
                     }
                     if !loading, error == nil, channels.isEmpty, categories.isEmpty { EmptyState("No results", detail: "Try another channel or category name.", symbol: "magnifyingglass") }
@@ -106,7 +107,7 @@ struct SearchView: View {
             if kind == "Categories" { let page = try await api.searchCategories(query, after: more ? cursor : nil); try Task.checkCancellation(); guard current == query + kind else { return }; categories = more ? categories + page.data : page.data; cursor = page.pagination?.cursor }
             else { let page = try await api.searchChannels(query, liveOnly: kind == "Live channels", after: more ? cursor : nil); try Task.checkCancellation(); guard current == query + kind else { return }; channels = more ? channels + page.data : page.data; cursor = page.pagination?.cursor }
         } catch is CancellationError { }
-        catch { if current == query + kind { self.error = error.localizedDescription } }
+        catch { if current == query + kind { self.error = error.localizedDescription; model.noteConnectionError(error) } }
     }
 }
 

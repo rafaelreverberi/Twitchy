@@ -7,6 +7,35 @@ final class TVNavigationTests: XCTestCase {
     @MainActor private func capture(_ name: String) {
         let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); image.name = name; image.lifetime = .keepAlways; add(image)
     }
+    @MainActor func testOfflineDiscoveryAndRetainedAccount() {
+        for route in ["Home", "Channels", "Search", "Settings"] {
+            let app = XCUIApplication()
+            app.launchEnvironment["TWITCHY_TV_SCREEN"] = route
+            app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
+            app.launch()
+            if route == "Settings" {
+                XCTAssertTrue(app.staticTexts["Offline viewer"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.staticTexts["Signed in · Offline"].exists)
+                XCTAssertFalse(app.buttons["Connect Twitch"].exists)
+            } else {
+                XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.buttons["discovery.retry"].exists)
+                XCTAssertFalse(app.buttons["Go to Downloads"].exists)
+            }
+            capture("Offline " + route)
+            app.terminate()
+        }
+    }
+    @MainActor func testTelevisionShellAppearsWhileLibraryLoads() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "loading"
+        app.launchEnvironment["TWITCHY_TV_SCREEN"] = "Home"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Watch now"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["home.skeleton"].firstMatch.exists)
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists)
+        capture("TV stream placeholders")
+    }
     @MainActor private func focus(_ target: XCUIElement, in app: XCUIApplication) {
         guard target.waitForExistence(timeout: 10) else { XCTFail("Missing \(target.label)"); return }
         for _ in 0..<20 {
