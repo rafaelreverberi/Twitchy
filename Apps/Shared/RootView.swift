@@ -12,6 +12,9 @@ enum Destination: String, CaseIterable, Identifiable {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var destination: Destination? = .home
+    #if os(macOS)
+    @State private var showingCompanion = false
+    #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
@@ -33,6 +36,9 @@ struct RootView: View {
             }
         }
         .task {
+            #if DEBUG && os(macOS)
+            guard ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] == nil else { return }
+            #endif
             #if os(iOS)
             guard !model.isMobileFixture else { return }
             #endif
@@ -57,6 +63,9 @@ struct RootView: View {
             if phase == .active { model.mobile.enterForeground() }
             #endif
             if phase == .active { Task {
+                #if DEBUG && os(macOS)
+                guard ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] == nil else { return }
+                #endif
                 #if os(iOS)
                 guard !model.isMobileFixture else { return }
                 #endif
@@ -125,9 +134,13 @@ struct RootView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 14) {
                     if model.nowPlaying != nil { DesktopNowPlayingView() }
-                    Button { model.showingSettings = true } label: {
-                        Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading)
-                    }.buttonStyle(.plain).accessibilityIdentifier("settings.open")
+                    HStack {
+                        Button { model.showingSettings = true } label: {
+                            Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings.open")
+                        Button { showingCompanion = true } label: { Image(systemName: "tv") }
+                            .buttonStyle(.plain).accessibilityLabel("Companion Mode").accessibilityIdentifier("companion.open")
+                    }
                 }.padding(16).background(.bar)
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
@@ -152,15 +165,23 @@ struct RootView: View {
                 }
             }
         }
-        .accessibilityHidden(model.desktopFullscreen)
-        .allowsHitTesting(!model.desktopFullscreen)
+        .opacity(showingCompanion ? 0 : 1)
+        .accessibilityHidden(model.desktopFullscreen || showingCompanion)
+        .allowsHitTesting(!model.desktopFullscreen && !showingCompanion)
         .overlay {
             if model.desktopFullscreen {
                 DesktopWatchPlayer(theater: Binding(get: { model.desktopTheater }, set: { model.desktopTheater = $0 }), fullscreenPresentation: true)
                     .background(.black).ignoresSafeArea()
             }
         }
-        .toolbar(model.desktopFullscreen ? .hidden : .automatic, for: .windowToolbar)
+        .overlay {
+            if showingCompanion {
+                CompanionView(close: { showingCompanion = false })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+        }
+        .toolbar(model.desktopFullscreen || showingCompanion ? .hidden : .automatic, for: .windowToolbar)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
             guard let window = notification.object as? NSWindow, window === model.desktopPlayerSurface.view.window else { return }
             model.desktopFullscreen = false

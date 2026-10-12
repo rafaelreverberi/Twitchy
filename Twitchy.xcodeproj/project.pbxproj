@@ -36,6 +36,7 @@
 		555DC6D86BDBE9AB3888A643 /* TwitchyPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = D9B65B61F33A28C8910A533C /* TwitchyPlayback */; };
 		57535B2C7B5D261E5EFB2C8C /* TwitchyAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 16575BF124C3CB0E3F24F77D /* TwitchyAuth */; };
 		57FF6E3BB99785EDAC6464B2 /* TwitchyAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A0003E8B9CABC2BA6D89E3D2 /* TwitchyAPI */; };
+		58301AF62BAF7AEBC1D2AC25 /* MobileCompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */; };
 		584FBD01D9322FEF89C40199 /* TVNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56CFA5ABECE5921D11704FB3 /* TVNavigationTests.swift */; };
 		6154B30A823100D373AD3163 /* WatchHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */; };
 		6184D2FA4FFBD8D199A3CE93 /* MobileFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */; };
@@ -44,12 +45,14 @@
 		7081426D37D1DD9BBDE8F6A4 /* MobileChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEEFA086DD0E86C2CB2E188 /* MobileChannelView.swift */; };
 		7179D914E14B1FAAC2812524 /* ChannelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */; };
 		746B6F5EF9981876131CB4DF /* WatchHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */; };
+		777CD5B530BBEA39C2790E24 /* MobileCompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */; };
 		78C4651DF1E324E1513BA0C2 /* TwitchyChat in Frameworks */ = {isa = PBXBuildFile; productRef = D5993BC056467CAC6DE5E408 /* TwitchyChat */; };
 		79E400B2F33E2A66A1EFDD5B /* MobilePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299D57EA01052822E4020017 /* MobilePlayback.swift */; };
 		7DD6DD19F04AC6C19E85AD94 /* TwitchyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */; };
 		7E310AB5B5E1B1EF82458B2F /* MobileChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEC7C2A78DFE0722B10F789 /* MobileChatView.swift */; };
 		7E3D0D9D09B09379CB817E50 /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = 05792803C4302E68B3A9C32B /* TwitchyCore */; };
 		8160CF713A74338893A49EC0 /* TwitchyDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = F37923F4121FFE759FD9ED96 /* TwitchyDesignSystem */; };
+		8294AEA062CD47268F7972A5 /* MobileCompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */; };
 		8C28C55E0D3FB1806B5BFFF2 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA280CB5BCFA86DA6ABB997D /* AppModel.swift */; };
 		8CFC0C146828F8FAD08A4639 /* ChannelDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */; };
 		8D85DC7777BE1524D2E1CFF1 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6978C3F152935299090A10AD /* NavigationTests.swift */; };
@@ -138,6 +141,7 @@
 		9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHomeView.swift; sourceTree = "<group>"; };
 		A0DAF78D8BADD52AC5289C5D /* TwitchyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TwitchyKit; path = Packages/TwitchyKit; sourceTree = SOURCE_ROOT; };
 		A8229107D231D14F33914AC7 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCompanionView.swift; sourceTree = "<group>"; };
 		ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwitchyApp.swift; sourceTree = "<group>"; };
 		ADEC7C2A78DFE0722B10F789 /* MobileChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatView.swift; sourceTree = "<group>"; };
 		B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFixtures.swift; sourceTree = "<group>"; };
@@ -291,6 +295,7 @@
 				9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */,
 				BEEEFA086DD0E86C2CB2E188 /* MobileChannelView.swift */,
 				ADEC7C2A78DFE0722B10F789 /* MobileChatView.swift */,
+				AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */,
 				B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */,
 				299D57EA01052822E4020017 /* MobilePlayback.swift */,
 				D269341F7BD904ED43BB233E /* MobileWatchView.swift */,
@@ -600,6 +605,7 @@
 				9B2A81056F5B802A4DE4C7E2 /* MacHomeView.swift in Sources */,
 				94405C46F8B4F642409D6199 /* MobileChannelView.swift in Sources */,
 				072292942DAB361C9D3B7550 /* MobileChatView.swift in Sources */,
+				8294AEA062CD47268F7972A5 /* MobileCompanionView.swift in Sources */,
 				6184D2FA4FFBD8D199A3CE93 /* MobileFixtures.swift in Sources */,
 				A36DD00812ABF6183995B689 /* MobilePlayback.swift in Sources */,
 				D6FA6A50E62ED653E42685EC /* MobileWatchView.swift in Sources */,
@@ -623,6 +629,7 @@
 				D9A0E731589465F6E8E5B52A /* MacHomeView.swift in Sources */,
 				35963E377AEB0D83BADAC3F6 /* MobileChannelView.swift in Sources */,
 				7E310AB5B5E1B1EF82458B2F /* MobileChatView.swift in Sources */,
+				777CD5B530BBEA39C2790E24 /* MobileCompanionView.swift in Sources */,
 				B56CC35B17CCE3638AAE9972 /* MobileFixtures.swift in Sources */,
 				030FF5948F9702ABD07FB8D0 /* MobilePlayback.swift in Sources */,
 				C0E8C12D3393D5FE63A8B2C0 /* MobileWatchView.swift in Sources */,
@@ -654,6 +661,7 @@
 				D2B59A45375CC8AA8E9BBFF1 /* MacHomeView.swift in Sources */,
 				7081426D37D1DD9BBDE8F6A4 /* MobileChannelView.swift in Sources */,
 				00410C25D59856CCFA6F1752 /* MobileChatView.swift in Sources */,
+				58301AF62BAF7AEBC1D2AC25 /* MobileCompanionView.swift in Sources */,
 				A6D6AC440F0CF1E1D4B8C7E1 /* MobileFixtures.swift in Sources */,
 				79E400B2F33E2A66A1EFDD5B /* MobilePlayback.swift in Sources */,
 				E1CDB1C4CFC8B03933E156A1 /* MobileWatchView.swift in Sources */,

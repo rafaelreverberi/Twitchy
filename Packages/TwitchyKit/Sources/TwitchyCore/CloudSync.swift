@@ -123,10 +123,10 @@ public actor PrivateCloudTransport: CloudSyncTransport {
         } catch { status = "Local sync data could not be read; the file has been preserved."; storageFailed = true }
         if transport == nil, !storageFailed { status = "iCloud requires an Apple-signed build with the Twitchy container." }
     }
-    public func put(_ key: String, payload: Data?, seed: Bool = false) {
+    public func put(_ key: String, payload: Data?, seed: Bool = false, refresh: Bool = false) {
         guard !storageFailed else { return }
         if seed, values[key] != nil { return }
-        if let existing = values[key], existing.payload == payload { return }
+        if !refresh, let existing = values[key], existing.payload == payload { return }
         values[key] = SyncValue(key: key, payload: payload, modifiedAt: seed ? Date(timeIntervalSince1970: 0) : .now, revision: seed ? "" : UUID().uuidString)
         dirty.insert(key); persist()
         debounce?.cancel()

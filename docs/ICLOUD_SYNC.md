@@ -9,6 +9,7 @@ Sync includes:
 - Sources, source bearer tokens and selected source. Imported tokens enter the source-only Keychain.
 - Every playback, chat and appearance preference, public OAuth application settings, recent searches and onboarding state.
 - Watch entries including VOD/clip resume positions and actual viewing sessions across devices.
+- Short-lived Apple TV live-stream presence for the iPhone Companion Mode (TV name, channel login/name and broadcaster ID).
 
 Twitch access/refresh tokens, chat messages and downloaded media/indexes remain on each device. Offline downloaded paths and source health data cannot be transferred meaningfully to another device.
 
@@ -23,3 +24,11 @@ Automated tests cover two independent devices, encrypted journal persistence, so
 The maintainer reported successful iCloud sync and launches on their devices on 2026-10-10. That report does not establish every merge/deletion scenario below. For independent verification with your own team/container: add an authenticated reachable source on Mac, sign in to Twitch separately on iPhone/iPad/Apple TV, confirm source playback on each, watch different channels offline, reconnect, check merged interests/resume positions, then remove a test source and confirm deletion on peers. Also check Production schema after deployment.
 
 Legacy favorite records remain readable for storage compatibility, but favorites are no longer exposed in any client.
+
+## iPhone and Mac Companion Mode
+
+On iPhone Home, tap the TV icon beside Settings. On Mac, use the TV icon beside Settings at the bottom of the sidebar; Companion Mode fills the window until you select Done. The full-screen view waits with “Start a stream on your TV” until Twitchy on Apple TV reports an active live playback session. It then opens that channel’s chat with a composer, using the companion device’s own Twitch account and chat permissions. Enable chat from inside this view if needed. Videos, clips, failed playback and channel browsing do not advertise a live session. Multiple active TVs can be selected from the TV menu.
+
+Both devices require signed iCloud-capable builds and the same iCloud account. Apple TV publishes an encrypted per-device presence record every 10 seconds while active; the open companion view checks every 5 seconds. Switches and stops propagate through CloudKit, so updates can take several seconds and depend on network availability. Presence expires after 60 seconds without a heartbeat, including when the TV app terminates before sending its stop record. No Twitch credentials or chat messages are included in presence records. The companion uses a separate chat connection and does not start video playback on the companion device.
+
+Tests validate presence transfer, heartbeat refresh, stop tombstones, invalid records and expiration using a fake transport, plus waiting/full-screen chat/composer/dismissal with simulator fixtures. Live CloudKit discovery and sending a Twitch message require a real signed Apple TV and iPhone; simulator fixtures do not exercise those services.

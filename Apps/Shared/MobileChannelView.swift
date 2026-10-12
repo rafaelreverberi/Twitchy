@@ -8,6 +8,7 @@ import TwitchyPlayback
 struct MobileRootView: View {
     @Environment(AppModel.self) private var model
     @State private var tab: Destination = .home
+    @State private var showingCompanion = false
     var body: some View {
         Group {
             if !model.startupComplete {
@@ -20,7 +21,14 @@ struct MobileRootView: View {
                             MobileTabContent(destination: destination)
                                 .navigationTitle(destination.rawValue)
                                 .navigationBarTitleDisplayMode(.large)
-                                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        if destination == .home {
+                                            Button { showingCompanion = true } label: { Image(systemName: "tv") }
+                                                .accessibilityLabel("Companion Mode").accessibilityIdentifier("companion.open")
+                                        }
+                                    }
+                                    ToolbarItem(placement: .topBarTrailing) {
                                     Button { model.showingSettings = true } label: { Image(systemName: "gearshape") }
                                         .accessibilityLabel("Settings").accessibilityIdentifier("settings.open")
                                 } }
@@ -37,6 +45,7 @@ struct MobileRootView: View {
         }
         .defaultAppStorage(settingsStore)
         .overlay { MobilePlaybackOverlay() }
+        .fullScreenCover(isPresented: $showingCompanion) { CompanionView().environment(model) }
         .statusBarHidden(model.mobile.fullscreen)
         .persistentSystemOverlays(model.mobile.fullscreen ? .hidden : .automatic)
         .onChange(of: model.playback.state) { _, _ in model.mobile.handleState() }

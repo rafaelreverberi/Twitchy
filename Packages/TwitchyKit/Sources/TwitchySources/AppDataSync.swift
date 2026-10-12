@@ -73,6 +73,7 @@ import TwitchyCore
     }
     private func receive(_ values: [SyncValue]) throws {
         for value in values.sorted(by: { $0.key < $1.key }) {
+            if value.key.hasPrefix(TVLivePresence.keyPrefix) { continue }
             let parts = value.key.split(separator: "/", maxSplits: 1).map(String.init)
             if parts.first == "source", parts.count == 2, let id = UUID(uuidString: parts[1]) {
                 let decoded = try value.payload.map { try JSONDecoder().decode(SourceValue.self, from: $0) }
