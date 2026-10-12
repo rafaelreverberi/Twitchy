@@ -20,9 +20,8 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     public private(set) var isPaused = true
     public private(set) var isMuted = false
     public var pictureInPictureActive = false
-    #if os(iOS)
     public private(set) var failureIsRetryable = false
-    #endif
+    @ObservationIgnored public var resolveClient: ((PlaybackRequest, UUID?) async throws -> StreamingSourceClient)?
     private var client: StreamingSourceClient?
     private var request: PlaybackRequest?
     private var offlineExpectedDuration: Double?
@@ -30,6 +29,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     private var observation: NSKeyValueObservation?
     private var muteObservation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
+    @ObservationIgnored private var failureNotification: (any NSObjectProtocol)?
     private var generation = UUID()
     public init() {
         // Use the same adaptive stall prevention on every platform.
@@ -88,16 +88,27 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
             state = .buffering; player.replaceCurrentItem(with: item); player.play()
         } catch { if generation == current { state = .failed; self.error = error.localizedDescription } }
     }
-    public func start(client: StreamingSourceClient, request: PlaybackRequest) async {
+    public func start(client: StreamingSourceClient, request: PlaybackRequest, failedSourceID: UUID? = nil) async {
         let current = UUID()
         await reset(nextState: .loading, generationID: current)
         guard generation == current, !Task.isCancelled else { return }
         self.client = client; self.request = request; state = .loading; error = nil
-        #if os(iOS)
         failureIsRetryable = false
-        #endif
         do {
-            let session = try await client.createSession(request)
+            var client = client
+            if let resolveClient { client = try await resolveClient(request, failedSourceID) }
+            guard generation == current, !Task.isCancelled else { return }
+            self.client = client
+            let session: PlaybackSession
+            do { session = try await client.createSession(request) }
+            catch {
+                guard Self.canRecover(error), let resolveClient else { throw error }
+                let backup = try await resolveClient(request, client.source.id)
+                guard generation == current, !Task.isCancelled else { return }
+                guard backup.source.id != client.source.id else { throw error }
+                client = backup; self.client = backup
+                session = try await backup.createSession(request)
+            }
             guard generation == current, !Task.isCancelled else { try await client.endSession(session.sessionId); return }
             self.session = session; quality = request.requestedQuality
             switch session.state {
@@ -108,21 +119,23 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
             case "server_error": state = .failed; error = "The source reported a playback error."
             default: state = .buffering
             }
-            #if os(iOS)
             if state == .unavailable { error = "This stream is unavailable. The channel may be offline."; return }
             if state == .unsupported { return }
             if state == .failed { failureIsRetryable = true; return }
-            #endif
             let item = AVPlayerItem(url: session.hlsUrl)
             // Zero lets AVFoundation choose a buffer suited to the source HLS.
             item.preferredForwardBufferDuration = 0
             itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
                 let failed = item.status == .failed
                 Task { @MainActor [weak self] in if failed, let self, self.generation == current { self.state = .failed; self.error = "Video playback failed. Retry or check your streaming source."
-                    #if os(iOS)
                     self.failureIsRetryable = true
-                    #endif
                 } }
+            }
+            failureNotification = NotificationCenter.default.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, generation == current else { return }
+                    failureIsRetryable = true; state = .failed; error = "Video playback was interrupted."
+                }
             }
             player.replaceCurrentItem(with: item)
             #if os(iOS) || os(tvOS)
@@ -133,15 +146,14 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         } catch is CancellationError { if generation == current { state = .idle } }
         catch { if generation == current {
             self.error = error.localizedDescription; state = .failed
-            #if os(iOS)
+            failureIsRetryable = Self.canRecover(error)
             if let sourceError = error as? SourceAPIError {
                 failureIsRetryable = sourceError.problem.retryable
                 if ["stream_unavailable", "content_unavailable", "unavailable"].contains(sourceError.problem.code), !sourceError.problem.retryable {
                     state = .unavailable; self.error = "This stream is currently unavailable. It may be offline."
                 }
             }
-            else if let networkError = error as? URLError { failureIsRetryable = [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(networkError.code) }
-            #endif
+
         } }
     }
     public func changeQuality(_ value: String) async {
@@ -152,7 +164,21 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
     }
     public func retry() async {
         if let localFile, let request { await startOffline(url: localFile, type: request.contentType, contentID: request.contentId ?? "", expectedDuration: offlineExpectedDuration); return }
-        guard let client, let request else { return }; await start(client: client, request: request)
+        guard let client, let request else { return }
+        let seconds = player.currentTime().seconds
+        let failed = state == .failed && failureIsRetryable ? client.source.id : nil
+        await start(client: client, request: request, failedSourceID: failed)
+        if request.contentType != "live", seconds.isFinite, seconds > 0, session != nil, self.request?.contentId == request.contentId, self.request?.contentType == request.contentType {
+            await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+        }
+    }
+    public static func canRecover(_ error: Error) -> Bool {
+        if let error = error as? SourceAPIError { return error.problem.retryable && (error.status >= 500 || error.status == 429) }
+        if let error = error as? URLError {
+            return [.timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet].contains(error.code)
+        }
+        if case ClientError.server(let status) = error { return status >= 500 }
+        return false
     }
     public func stop() async { await reset(nextState: .idle, generationID: UUID()) }
     private func reset(nextState: PlayerState, generationID: UUID) async {
@@ -160,6 +186,7 @@ public enum PlayerState: String, Sendable { case idle, loading, playing, bufferi
         #if os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
+        if let failureNotification { NotificationCenter.default.removeObserver(failureNotification); self.failureNotification = nil }
         itemObservation = nil; isPaused = true; player.pause(); player.replaceCurrentItem(with: nil)
         let old = session; let oldClient = client; session = nil; localFile = nil; state = nextState; error = nil; client = nil; request = nil
         offlineExpectedDuration = nil

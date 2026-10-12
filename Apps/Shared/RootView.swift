@@ -88,7 +88,7 @@ struct RootView: View {
         }
         .onChange(of: model.auth.status) { _, _ in Task { if model.startupComplete { await model.refresh() } } }
         .onChange(of: model.auth.session?.accessToken) { _, _ in Task { if model.startupComplete { await model.refresh() } } }
-        .onChange(of: model.sources.active?.baseURL) { _, _ in
+        .onChange(of: model.sources.selected?.baseURL) { _, _ in
             #if os(macOS)
             if !model.isOfflinePlayback { model.stopDesktopPlayback() }
             #elseif os(iOS)
@@ -218,6 +218,7 @@ struct RootView: View {
         #endif
     }
 }
+#if !os(tvOS)
 struct WelcomeView: View {
     @Environment(AppModel.self) private var model
     @State private var sources = false
@@ -245,6 +246,7 @@ struct WelcomeView: View {
         #endif
     }
 }
+#endif
 struct LoginPrompt: View {
     @Environment(AppModel.self) private var model
     var body: some View { VStack { EmptyState("Connect with Twitch", detail: "Twitch requires an access token for discovery. Sign in to browse channels and categories, even without a streaming source.", symbol: "person.crop.circle.badge.checkmark"); Button(model.auth.session == nil ? "Sign in with Twitch" : "Reconnect") { Task { if model.auth.session != nil { try? await model.auth.validate(); await model.refresh() }; if model.auth.session == nil { await model.login() } else if model.api == nil { model.showingSettings = true } } }.buttonStyle(.borderedProminent) }.padding(.bottom, 32) }

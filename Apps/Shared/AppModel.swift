@@ -16,6 +16,8 @@ import Network
     #endif
     #if DEBUG && os(tvOS) && targetEnvironment(simulator)
     let sources = StreamingSourceManager(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-sources-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: TVFixtures.sourceSecrets)
+    #elseif DEBUG
+    let sources = StreamingSourceManager(url: ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" ? URL.temporaryDirectory.appendingPathComponent("sources-ui-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" ? SourceFixtureSecrets() as any SecretStore : KeychainStore(service: "com.rafaelreverberi.Twitchy.sources"))
     #else
     let sources = StreamingSourceManager()
     #endif
@@ -69,6 +71,15 @@ import Network
     var networkOffline = false
     @ObservationIgnored private var connectivityMonitor: NWPathMonitor?
     @ObservationIgnored private var pendingReconnect = false
+    @ObservationIgnored private var sourceCheckTask: Task<Void, Never>?
+    private func checkSourcesAfterNetworkChange() {
+        sourceCheckTask?.cancel()
+        sourceCheckTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(1)); try Task.checkCancellation() } catch { return }
+            guard let self, !networkOffline, !isDiscoveryFixture else { return }
+            await sources.refreshAvailability(force: true)
+        }
+    }
     private func startConnectivityMonitoring() {
         guard connectivityMonitor == nil, !isDiscoveryFixture else { return }
         let monitor = NWPathMonitor()
@@ -79,6 +90,7 @@ import Network
                 guard let self else { return }
                 let reconnecting = self.networkOffline && !offline
                 self.networkOffline = offline
+                if !offline { self.checkSourcesAfterNetworkChange() }
                 if reconnecting {
                     if self.startupComplete { await self.restoreLibrary() }
                     else { self.pendingReconnect = true }
@@ -256,6 +268,13 @@ import Network
         startConnectivityMonitoring()
         defer { startupComplete = true }
         #if DEBUG
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" {
+            personal.data.onboardingComplete = true
+            try? sources.upsert(.init(name: "Primary", baseURL: URL(string: "http://127.0.0.1:18181")!, allowLocalHTTP: true))
+            try? sources.upsert(.init(name: "Backup", baseURL: URL(string: "http://127.0.0.1:18182")!, allowLocalHTTP: true))
+            showingSettings = true
+            return
+        }
         if let fixture = ProcessInfo.processInfo.environment["TWITCHY_UI_DISCOVERY_FIXTURE"] {
             personal.data.onboardingComplete = true
             networkOffline = fixture == "offline"
@@ -308,6 +327,10 @@ import Network
             return
         }
         #endif
+        playback.resolveClient = { [weak self] request, failedID in
+            guard let self else { throw CancellationError() }
+            return try await sources.readyClient(for: request, failedSourceID: failedID)
+        }
         if !syncStarted {
             syncStarted = true
             if personal.data.oauthSettings == nil { saveOAuthSettings() }
@@ -325,6 +348,7 @@ import Network
             await restoreLibrary()
         }
         await sync.sync()
+        Task { await sources.refreshAvailability() }
     }
     func login(chat: Bool = false, presentSettings: Bool = true) async {
         guard !auth.isSigningIn else {
@@ -451,6 +475,13 @@ extension ChannelSelection: Hashable {}
 #endif
 
 #if DEBUG
+private final class SourceFixtureSecrets: SecretStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+    func read(_ key: String) throws -> Data? { lock.withLock { values[key] } }
+    func write(_ data: Data, key: String) throws { lock.withLock { values[key] = data } }
+    func delete(_ key: String) throws { lock.withLock { values[key] = nil } }
+}
 private final class DiscoveryFixtureSecrets: SecretStore, @unchecked Sendable {
     private var session: Data? = Data(#"{"accessToken":"fixture-only","clientID":"fixture","userID":"fixture-account","login":"offlineviewer","scopes":[],"expiresAt":2000000000}"#.utf8)
     func read(_ key: String) throws -> Data? { key == "session" ? session : nil }
