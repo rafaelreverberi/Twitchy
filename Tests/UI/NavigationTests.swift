@@ -39,7 +39,65 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.buttons["oauth.signIn"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.textFields["oauth.clientID"].exists, "Client configuration should stay in Advanced settings")
     }
+    #if os(macOS)
+    @MainActor func testMacCompanionWaitingAndDismissal() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_COMPANION_FIXTURE"] = "idle"
+        app.launch()
+        let open = app.buttons["companion.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); open.click()
+        XCTAssertTrue(app.staticTexts["Start a stream on your TV"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["settings.open"].isHittable)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Mac Companion waiting"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["companion.close"].click()
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+    }
+    @MainActor func testMacCompanionLiveChatNeedsOwnAuthorization() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_COMPANION_FIXTURE"] = "live"
+        app.launch()
+        let open = app.buttons["companion.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); open.click()
+        XCTAssertTrue(app.buttons["Authorize chat"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Living Room"].exists)
+        XCTAssertFalse(app.staticTexts["LIVE"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Mac Companion live channel"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["companion.close"].click()
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+    }
+    #endif
     #if os(iOS)
+    @MainActor func testCompanionWaitingAndDismissal() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_COMPANION_FIXTURE"] = "idle"
+        app.launch()
+        let button = app.buttons["companion.open"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10)); button.tap()
+        XCTAssertTrue(app.staticTexts["Start a stream on your TV"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["chat.input"].firstMatch.exists)
+        capture("Companion waiting for Apple TV")
+        app.buttons["companion.close"].tap()
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+    }
+    @MainActor func testCompanionLiveChatFillsScreen() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_COMPANION_FIXTURE"] = "live"
+        app.launch()
+        let button = app.buttons["companion.open"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10)); button.tap()
+        let input = app.descendants(matching: .any)["chat.input"].firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Living Room"].exists)
+        XCTAssertFalse(app.staticTexts["LIVE"].exists)
+        XCTAssertFalse(app.otherElements["watch.video"].isHittable)
+        input.tap(); input.typeText("Hello from my iPhone")
+        XCTAssertEqual(input.value as? String, "Hello from my iPhone")
+        capture("Full screen companion chat with keyboard")
+        app.buttons["companion.close"].tap()
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+    }
     @MainActor func testOfflineDownloadUsesTheNormalPlayerAndOfflineChat() throws {
         let app = XCUIApplication()
         app.launchEnvironment["TWITCHY_UI_PLAYBACK_FIXTURE"] = "1"

@@ -14,6 +14,14 @@ struct TVRootView: View {
     @State private var signIn = false
     @State private var tab = "Home"
     @State private var completingSignIn = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var companionDeviceID: String = {
+        let key = "companion.tv.deviceID"
+        if let id = UserDefaults.standard.string(forKey: key) { return id }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }()
     @AppStorage("tv.onboardingSkipped") private var skippedOnboarding = false
     var body: some View {
         @Bindable var model = model
@@ -45,6 +53,13 @@ struct TVRootView: View {
         .onChange(of: model.selectedChannel?.id) { _, id in
             if id == nil && !model.playback.pictureInPictureActive { model.sampleViewing(); model.chat.disconnect(); model.playback.player.pause(); Task { await model.playback.stop() } }
         }
+        .task(id: "\(model.startupComplete)|\(model.tvCompanionBroadcasterID ?? "")|\(scenePhase)|\(model.playback.state)|\(model.playback.session?.sessionId ?? "")|\(model.selectedChannel?.id.uuidString ?? "")") {
+            guard model.startupComplete, !TVFixtures.enabled else { return }
+            while !Task.isCancelled {
+                await publishCompanion()
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $model.showingSettings) {
             NavigationStack { TVSettingsView { model.showingSettings = false; signIn = true }
@@ -52,6 +67,25 @@ struct TVRootView: View {
             }
         }
     }
+    private func publishCompanion() async {
+        let key = TVLivePresence.keyPrefix + companionDeviceID
+        var presence: TVLivePresence?
+        if scenePhase == .active, let selection = model.selectedChannel,
+           let request = model.playback.currentRequest, request.contentType == "live",
+           request.channelLogin == selection.login, model.playback.session != nil,
+           [.playing, .buffering, .adBreak, .reconnecting].contains(model.playback.state) {
+            // Direct playback can begin before the optional channel profile request finishes.
+            let id = selection.broadcasterID ?? model.tvCompanionBroadcasterID
+            if let id {
+                presence = .init(id: companionDeviceID, deviceName: UIDevice.current.name,
+                                 login: selection.login, name: selection.name, broadcasterID: id)
+            }
+        }
+        let payload = presence.flatMap { try? JSONEncoder().encode($0) }
+        model.sync.cloud.put(key, payload: payload, refresh: presence != nil)
+        await model.sync.sync()
+    }
+
 }
 
 struct TVSignInView: View {
@@ -491,6 +525,7 @@ struct TVChannelView: View {
             else { channelLibrary }
         }
         .onExitCommand { close() }
+        .onChange(of: broadcasterID, initial: true) { _, id in model.tvCompanionBroadcasterID = id }
         .task {
             // Playback starts independently of Twitch metadata and library requests.
             if watching { play(type: selection.contentType ?? "live", id: selection.contentID) }
@@ -594,7 +629,7 @@ struct TVChannelView: View {
         let seconds = model.playback.player.currentTime().seconds
         if seconds.isFinite && seconds > 0 { model.personal.watched(.init(login: selection.login, title: selection.name, position: seconds, contentType: request.contentType, contentID: id)) }
     }
-    private func close() { savePosition(); model.selectedChannel = nil }
+    private func close() { savePosition(); model.tvCompanionBroadcasterID = nil; model.selectedChannel = nil }
     private func stop() { savePosition(); playbackTask?.cancel(); retryTask?.cancel(); model.playback.player.pause(); Task { await model.playback.stop() } }
 }
 struct TVPlayerSurface: View {

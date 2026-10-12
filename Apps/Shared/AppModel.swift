@@ -18,6 +18,8 @@ import AVKit
     let personal = PersonalStore(url: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("Twitchy-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #elseif DEBUG && os(tvOS) && targetEnvironment(simulator)
     let personal = PersonalStore(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-personal-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
+    #elseif DEBUG && os(macOS)
+    let personal = PersonalStore(url: ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil ? URL.temporaryDirectory.appendingPathComponent("Twitchy-companion-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #else
     let personal = PersonalStore()
     #endif
@@ -29,6 +31,7 @@ import AVKit
     let downloads = DownloadManager()
     #endif
     #if os(tvOS)
+    var tvCompanionBroadcasterID: String?
     var startupComplete = false
     #endif
     #if os(iOS)
@@ -195,6 +198,12 @@ import AVKit
     }
     var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
     func startup() async {
+        #if DEBUG && os(macOS)
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil {
+            personal.data.onboardingComplete = true
+            return
+        }
+        #endif
         #if os(tvOS)
         defer { startupComplete = true }
         #endif
@@ -205,6 +214,10 @@ import AVKit
         defer { startupComplete = true }
         #endif
         #if DEBUG && os(iOS) && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil {
+            personal.data.onboardingComplete = true
+            return
+        }
         if ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" {
             personal.data.onboardingComplete = true
             personal.data.preferences.autoplay = true
@@ -236,15 +249,15 @@ import AVKit
         await sync.sync()
         await refresh()
     }
-    func login(chat: Bool = false) async {
+    func login(chat: Bool = false, presentSettings: Bool = true) async {
         guard !auth.isSigningIn else {
             #if !os(tvOS)
-            showingSettings = true
+            if presentSettings { showingSettings = true }
             #endif
             return
         }
         #if !os(tvOS)
-        showingSettings = true
+        if presentSettings { showingSettings = true }
         #endif
         await auth.login(configuration: configuration, chat: chat)
         #if os(macOS)

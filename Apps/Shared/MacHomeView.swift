@@ -99,6 +99,7 @@ struct MacChatMessage: View {
     @Environment(AppModel.self) private var model
     let message: TwitchyChat.ChatMessage
     let timestamp: Date
+    var badgeImages: [String: URL]? = nil
     private struct Token {
         var text: String
         var emoteID: String?
@@ -120,7 +121,7 @@ struct MacChatMessage: View {
         MacChatFlow(spacing: 4) {
             if model.personal.data.preferences.timestamps { Text(timestamp.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
             ForEach(message.badges, id: \.setId) { badge in
-                if let url = model.chat.badgeImages["\(badge.setId)/\(badge.id)"] {
+                if let url = (badgeImages ?? model.chat.badgeImages)["\(badge.setId)/\(badge.id)"] {
                     AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.clear }
                         .frame(width: 18, height: 18).accessibilityLabel(badge.setId)
                 }

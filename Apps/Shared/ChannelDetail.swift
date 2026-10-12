@@ -242,39 +242,45 @@ struct ChatPanel: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let broadcasterID: String?
+    var companionChat: ChatController? = nil
+    var authorizeChat: (() -> Void)? = nil
+    private var chat: ChatController { companionChat ?? model.chat }
+    private var offline: Bool { companionChat == nil && model.isOfflinePlayback }
     @State private var text = ""
     @State private var follow = true
     @State private var sending = false
     @State private var receivedAt: [String: Date] = [:]
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if companionChat == nil {
             HStack {
                 #if os(macOS)
                 Label("Stream chat", systemImage: "bubble.left.and.bubble.right").font(.headline)
                 #else
                 Text("Chat").font(.title2.bold())
                 #endif
-                Spacer(); Text(model.chat.status).font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(chat.status).font(.caption).foregroundStyle(.secondary)
             }
             #if os(macOS)
             Divider()
             if model.playback.currentRequest?.contentType != "live" { Text("Live channel chat · no replay").font(.caption).foregroundStyle(.secondary) }
             #endif
-            if model.isOfflinePlayback { OfflineChatNotice() } else if model.auth.session?.scopes.contains("user:read:chat") != true {
+            }
+            if offline { OfflineChatNotice() } else if model.auth.session?.scopes.contains("user:read:chat") != true {
                 Text("Connect with chat permissions to join this channel.").foregroundStyle(.secondary)
-                Button("Authorize chat") { Task { await model.login(chat: true) } }
+                Button("Authorize chat") { if let authorizeChat { authorizeChat() } else { Task { await model.login(chat: true) } } }
             } else {
-                if let error = model.chat.error { Notice(error) }
+                if let error = chat.error { Notice(error) }
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(model.chat.messages) { message in
+                            ForEach(chat.messages) { message in
                                 #if os(macOS)
-                                MacChatMessage(message: message, timestamp: receivedAt[message.id] ?? .now).id(message.id)
+                                MacChatMessage(message: message, timestamp: receivedAt[message.id] ?? .now, badgeImages: chat.badgeImages).id(message.id)
                                 #else
                                 HStack(alignment: .top, spacing: 5) {
                                 if model.personal.data.preferences.timestamps { Text((receivedAt[message.id] ?? .now).formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
-                                ForEach(message.badges, id: \.setId) { badge in if let url = model.chat.badgeImages["\(badge.setId)/\(badge.id)"] { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.clear }.frame(width: 18, height: 18).accessibilityLabel(badge.setId) } }
+                                ForEach(message.badges, id: \.setId) { badge in if let url = chat.badgeImages["\(badge.setId)/\(badge.id)"] { AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.clear }.frame(width: 18, height: 18).accessibilityLabel(badge.setId) } }
                                 Text(message.chatterUserName).bold().foregroundStyle(chatColor(message.color))
                                 if model.personal.data.preferences.emotes { MessageFragments(message: message) } else { Text(message.message.text) }
                                 }.font(.system(size: model.personal.data.preferences.chatFontSize)).id(message.id)
@@ -283,22 +289,38 @@ struct ChatPanel: View {
                         }.padding(.vertical, 8)
                     }
                     #if os(macOS)
+                    .overlay {
+                        if companionChat != nil, chat.messages.isEmpty {
+                            Text(chat.status == "Connected" ? "Be the first to say hello." : "Connecting to live chat…")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     .scrollIndicators(.hidden)
+                    .safeAreaInset(edge: .bottom, spacing: 8) {
+                        if !follow {
+                            HStack {
+                                Spacer()
+                                Button("Jump to latest") {
+                                    follow = true
+                                    if let last = chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
                     #endif
                     #if os(tvOS)
                     .onMoveCommand { _ in follow = false }
                     #else
                     .simultaneousGesture(DragGesture().onChanged { _ in follow = false })
                     #endif
-                    .onChange(of: model.chat.messages.last?.id) { _, _ in
-                        for message in model.chat.messages where receivedAt[message.id] == nil { receivedAt[message.id] = .now }
-                        let retained = Set(model.chat.messages.map(\.id)); receivedAt = receivedAt.filter { retained.contains($0.key) }
-                        if follow, model.personal.data.preferences.autoscroll, let last = model.chat.messages.last { if reduceMotion || model.personal.data.preferences.reduceMotion { proxy.scrollTo(last.id, anchor: .bottom) } else { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) } } }
+                    .onChange(of: chat.messages.last?.id) { _, _ in
+                        for message in chat.messages where receivedAt[message.id] == nil { receivedAt[message.id] = .now }
+                        let retained = Set(chat.messages.map(\.id)); receivedAt = receivedAt.filter { retained.contains($0.key) }
+                        if follow, model.personal.data.preferences.autoscroll, let last = chat.messages.last { if reduceMotion || model.personal.data.preferences.reduceMotion { proxy.scrollTo(last.id, anchor: .bottom) } else { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) } } }
                     }
-                    #if os(macOS)
-                    if !follow { Button("Jump to latest") { follow = true; if let last = model.chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } } }
-                    #else
-                    Button("Jump to latest") { follow = true; if let last = model.chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    #if !os(macOS)
+                    Button("Jump to latest") { follow = true; if let last = chat.messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
                     #endif
                 }
                 #if os(iOS)
@@ -313,13 +335,13 @@ struct ChatPanel: View {
                             .frame(width: 28, height: 28)
                             .background(.tint.opacity(0.16), in: Circle())
                     }.buttonStyle(.plain)
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || model.chat.status != "Connected")
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || chat.status != "Connected")
                         .accessibilityLabel("Send message")
                 }.padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
                     .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.primary.opacity(0.1), lineWidth: 1) }
                 #else
-                HStack { TextField("Send a message", text: $text).onSubmit { send() }.accessibilityIdentifier("chat.input"); Button { send() } label: { Image(systemName: "paperplane.fill") }.disabled(text.isEmpty || sending || model.chat.status != "Connected").accessibilityLabel("Send message") }
+                HStack { TextField("Send a message", text: $text).onSubmit { send() }.accessibilityIdentifier("chat.input"); Button { send() } label: { Image(systemName: "paperplane.fill") }.disabled(text.isEmpty || sending || chat.status != "Connected").accessibilityLabel("Send message") }
                 #endif
             }
         }
@@ -333,11 +355,11 @@ struct ChatPanel: View {
         .background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 12))
         #endif
         .task(id: (broadcasterID ?? "") + (model.auth.session?.accessToken ?? "")) {
-            guard !model.isOfflinePlayback, let id = broadcasterID, let api = model.api, let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
-            model.chat.connect(api: api, broadcasterID: id, userID: session.userID)
-        }.onDisappear { model.chat.disconnect() }
+            guard companionChat == nil, !offline, let id = broadcasterID, let api = model.api, let session = model.auth.session, session.scopes.contains("user:read:chat") else { return }
+            chat.connect(api: api, broadcasterID: id, userID: session.userID)
+        }.onDisappear { if companionChat == nil { chat.disconnect() } }
     }
-    private func send() { guard let id = broadcasterID, let api = model.api, let session = model.auth.session else { return }; sending = true; Task { if await model.chat.send(api: api, broadcasterID: id, userID: session.userID, text: text) { text = "" }; sending = false } }
+    private func send() { guard let id = broadcasterID, let api = model.api, let session = model.auth.session else { return }; sending = true; Task { if await chat.send(api: api, broadcasterID: id, userID: session.userID, text: text) { text = "" }; sending = false } }
     private func chatColor(_ value: String) -> Color { guard let hex = UInt32(value.replacingOccurrences(of: "#", with: ""), radix: 16) else { return TwitchyTheme.highlight }; return Color(hex: hex) }
 }
 struct MessageFragments: View {

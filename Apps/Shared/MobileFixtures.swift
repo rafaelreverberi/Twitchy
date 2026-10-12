@@ -5,7 +5,7 @@ import TwitchyAPI
 import TwitchyChat
 
 enum MobileFixtures {
-    static var enabled: Bool { ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" }
+    static var enabled: Bool { ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] != nil }
     private static func decode<T: Decodable>(_ text: String) -> T { try! JSONCoding.decoder().decode(T.self, from: Data(text.utf8)) }
     static var profile: TwitchUser { decode(#"{"id":"fixture","login":"fixture","display_name":"Playback test","profile_image_url":"","description":"A local channel for checking the iPhone layout, player transitions and chat. No Twitch account is used."}"#) }
     static var stream: TwitchStream { decode(#"{"id":"fixture-live","user_id":"fixture","user_login":"fixture","user_name":"Playback test","game_id":"fixture","game_name":"Science & Technology","title":"A stream that stays with you","viewer_count":1234,"thumbnail_url":"http://localhost:8181/media/fixture.png"}"#) }

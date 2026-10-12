@@ -7,6 +7,10 @@ import TwitchyDesignSystem
 struct MobileChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var companionChat: ChatController? = nil
+    var companionBroadcasterID: String? = nil
+    var authorizeChat: (() -> Void)? = nil
+    private var chat: ChatController { companionChat ?? model.chat }
     @State private var text = ""
     @State private var follow = true
     @State private var sending = false
@@ -14,7 +18,7 @@ struct MobileChatView: View {
     @FocusState private var composing: Bool
     private var fixture: Bool {
         #if DEBUG && targetEnvironment(simulator)
-        MobileFixtures.enabled
+        MobileFixtures.enabled || ProcessInfo.processInfo.environment["TWITCHY_UI_COMPANION_FIXTURE"] == "live"
         #else
         false
         #endif
@@ -23,17 +27,17 @@ struct MobileChatView: View {
         #if DEBUG && targetEnvironment(simulator)
         if fixture { return MobileFixtures.messages }
         #endif
-        return model.chat.messages
+        return chat.messages
     }
     private var authorized: Bool { fixture || model.auth.session?.scopes.contains("user:read:chat") == true }
     var body: some View {
-        if model.isOfflinePlayback { OfflineChatNotice() } else {
+        if companionChat == nil && model.isOfflinePlayback { OfflineChatNotice() } else {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 9) {
                         ForEach(messages) { message in
-                            MobileChatMessage(message: message, timestamp: received[message.id] ?? .now)
+                            MobileChatMessage(chat: chat, message: message, timestamp: received[message.id] ?? .now)
                                 .id(message.id).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }.padding(.horizontal, 16).padding(.vertical, 12)
@@ -49,9 +53,9 @@ struct MobileChatView: View {
                             if !authorized {
                                 Text("Join the conversation").font(.subheadline.weight(.semibold))
                                 Text("Connect your Twitch account with chat permissions.").font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                                Button("Connect chat") { Task { await model.login(chat: true) } }.buttonStyle(.bordered).accessibilityIdentifier("chat.authorize")
+                                Button("Connect chat") { if let authorizeChat { authorizeChat() } else { Task { await model.login(chat: true) } } }.buttonStyle(.bordered).accessibilityIdentifier("chat.authorize")
                             } else {
-                                Text(model.chat.status == "Connected" ? "Be the first to say hello." : "Connecting to live chat…").font(.footnote).foregroundStyle(.secondary)
+                                Text(chat.status == "Connected" ? "Be the first to say hello." : "Connecting to live chat…").font(.footnote).foregroundStyle(.secondary)
                             }
                         }.padding(28)
                     }
@@ -72,7 +76,7 @@ struct MobileChatView: View {
                     }
                 }
             }
-            if let error = model.chat.error, !fixture { Text(error).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 6) }
+            if let error = chat.error, !fixture { Text(error).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 6) }
             Divider()
             HStack(alignment: .bottom, spacing: 10) {
                 TextField(authorized ? "Send a message" : "Connect to chat", text: $text, axis: .vertical)
@@ -83,7 +87,7 @@ struct MobileChatView: View {
                 Button { send() } label: {
                     Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 40, height: 40).background(TwitchyTheme.accent, in: Circle())
-                }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || model.chat.status != "Connected" || fixture)
+                }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || chat.status != "Connected" || fixture)
                     .opacity(text.isEmpty ? 0.4 : 1).accessibilityLabel("Send message")
             }.padding(.horizontal, 12).padding(.vertical, 10).background(Color(uiColor: .secondarySystemBackground))
         }
@@ -94,16 +98,17 @@ struct MobileChatView: View {
     }
     }
     private func send() {
-        guard let api = model.api, let session = model.auth.session, let id = model.mobile.selection?.broadcasterID,
+        guard let api = model.api, let session = model.auth.session, let id = companionBroadcasterID ?? model.mobile.selection?.broadcasterID,
               !fixture, !sending, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         sending = true; let message = text
         Task {
-            if await model.chat.send(api: api, broadcasterID: id, userID: session.userID, text: message), text == message { text = "" }
+            if await chat.send(api: api, broadcasterID: id, userID: session.userID, text: message), text == message { text = "" }
             sending = false
         }
     }
 }
 private struct MobileChatMessage: View {
+    let chat: ChatController
     @Environment(AppModel.self) private var model
     let message: ChatMessage
     let timestamp: Date
@@ -113,7 +118,7 @@ private struct MobileChatMessage: View {
                 Text(timestamp.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.tertiary).padding(.trailing, 3)
             }
             ForEach(message.badges, id: \.setId) { badge in
-                if let url = model.chat.badgeImages["\(badge.setId)/\(badge.id)"] {
+                if let url = chat.badgeImages["\(badge.setId)/\(badge.id)"] {
                     AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { Color.clear }
                         .frame(width: 17, height: 17).accessibilityLabel(badge.setId)
                 }
