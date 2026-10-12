@@ -92,7 +92,8 @@ struct TVSignInView: View {
     var body: some View {
         HStack(spacing: 100) {
             VStack(alignment: .leading, spacing: 28) {
-                Label("Twitchy", systemImage: "play.square.stack.fill").font(.system(size: 46, weight: .bold)).foregroundStyle(TwitchyTheme.highlight)
+                HStack(spacing: 16) { BrandMark(size: 64); Text("Twitchy") }
+                    .font(.system(size: 46, weight: .bold)).foregroundStyle(TwitchyTheme.highlight)
                 Text("Your streams.\nOn the big screen.").font(.system(size: 66, weight: .bold)).fixedSize(horizontal: false, vertical: true)
                 Text("Scan with your phone. Sign in on Twitch.\nYour channels are ready.").font(.system(size: 28)).foregroundStyle(.secondary)
                 if let error = model.auth.error { Text(error).foregroundStyle(.secondary).font(.system(size: 24)) }
