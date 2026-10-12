@@ -10,6 +10,6 @@ let package = Package(
         .target(name: "TwitchySources", dependencies: ["TwitchyCore"]),
         .target(name: "TwitchyPlayback", dependencies: ["TwitchyCore", "TwitchySources"]),
         .target(name: "TwitchyChat", dependencies: ["TwitchyCore", "TwitchyAPI"]),
-        .target(name: "TwitchyDesignSystem"),
+        .target(name: "TwitchyDesignSystem", resources: [.process("Resources")]),
         .testTarget(name: "TwitchyKitTests", dependencies: ["TwitchyCore", "TwitchyAPI", "TwitchyAuth", "TwitchySources", "TwitchyPlayback", "TwitchyChat"], resources: [.copy("Fixtures")])
     ])

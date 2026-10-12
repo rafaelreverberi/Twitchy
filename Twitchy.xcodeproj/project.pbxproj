@@ -30,10 +30,13 @@
 		39D3D36F769EDF3DDCE17C9F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7194881833F29A660BBEC914 /* Assets.xcassets */; };
 		3B87C38321B122E3C1721824 /* TVStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83BDC47203C2978016B4CDF9 /* TVStorageTests.swift */; };
 		3D076B3D323680B4484ED0C8 /* TVFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33BF1C35ACB7801DECEBB322 /* TVFixtures.swift */; };
+		3E8FE5DC6642CA334CB4B9E4 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 90DCF46B50D693AB1D81C4A1 /* AppIcon.icon */; };
+		3F7136F45744994AA188BDC8 /* Twitchy_Logo_Vector.svg in Resources */ = {isa = PBXBuildFile; fileRef = 5D365B5DAF13980A5AA68F9B /* Twitchy_Logo_Vector.svg */; };
 		40728A33D869BBB8EBDB51C3 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6978C3F152935299090A10AD /* NavigationTests.swift */; };
 		4D853531A70AFE1876A8FADE /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DC7D882795E6A8887C791D /* RootView.swift */; };
 		4F4C4283F47BD4426308B88B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 74DD16EA9626462FA12495E4 /* Assets.xcassets */; };
 		555DC6D86BDBE9AB3888A643 /* TwitchyPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = D9B65B61F33A28C8910A533C /* TwitchyPlayback */; };
+		56CF82F0CE296DF47602F190 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 90DCF46B50D693AB1D81C4A1 /* AppIcon.icon */; };
 		57535B2C7B5D261E5EFB2C8C /* TwitchyAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 16575BF124C3CB0E3F24F77D /* TwitchyAuth */; };
 		57FF6E3BB99785EDAC6464B2 /* TwitchyAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A0003E8B9CABC2BA6D89E3D2 /* TwitchyAPI */; };
 		58301AF62BAF7AEBC1D2AC25 /* MobileCompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */; };
@@ -66,6 +69,7 @@
 		A36DD00812ABF6183995B689 /* MobilePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299D57EA01052822E4020017 /* MobilePlayback.swift */; };
 		A4C8018745B75C030F569B3C /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA77D9986AA566819FFFBB0E /* TwitchyCore */; };
 		A6D6AC440F0CF1E1D4B8C7E1 /* MobileFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */; };
+		A70F82CBF6AE8B049A03A3E3 /* Twitchy_Logo_Vector.svg in Resources */ = {isa = PBXBuildFile; fileRef = 5D365B5DAF13980A5AA68F9B /* Twitchy_Logo_Vector.svg */; };
 		A711D0263AC4346B66CCBA7A /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D6AB8EE2A46C6C8FA602D888 /* TwitchyCore */; };
 		B2E314079A98483C948B333A /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8229107D231D14F33914AC7 /* SearchView.swift */; };
 		B30621809D04C17A5635E50E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 74DD16EA9626462FA12495E4 /* Assets.xcassets */; };
@@ -90,6 +94,7 @@
 		E49BFFD73289F783DF28FB04 /* TwitchyAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 63144AFB5F3EC5DFD7A28180 /* TwitchyAPI */; };
 		EA0856F1995271A25BA60DD1 /* TwitchySources in Frameworks */ = {isa = PBXBuildFile; productRef = 6967F0C890CB15CEC90752FC /* TwitchySources */; };
 		EB2C5ECE9F5CFEC1DFC0A74C /* TwitchyDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = EF8A09CD240709AF17F92E4A /* TwitchyDesignSystem */; };
+		EC0D450F2C4191635BCF2561 /* Twitchy_Logo_Vector.svg in Resources */ = {isa = PBXBuildFile; fileRef = 5D365B5DAF13980A5AA68F9B /* Twitchy_Logo_Vector.svg */; };
 		F59CAA3FD062F000D08CBF90 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34ECC617628886598EF76F0 /* SettingsView.swift */; };
 		F5F1F0061D4FB8BC95D68B96 /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2FD2291E79CFD5BF864E3481 /* TwitchyCore */; };
 		F9F16127D1C22460DAD01B93 /* TVFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33BF1C35ACB7801DECEBB322 /* TVFixtures.swift */; };
@@ -129,6 +134,7 @@
 		4B2403F4331BA7811C0549E0 /* Twitchy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Twitchy.entitlements; sourceTree = "<group>"; };
 		518B0718DF2F2E172F12C973 /* WatchHistoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHistoryRow.swift; sourceTree = "<group>"; };
 		56CFA5ABECE5921D11704FB3 /* TVNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVNavigationTests.swift; sourceTree = "<group>"; };
+		5D365B5DAF13980A5AA68F9B /* Twitchy_Logo_Vector.svg */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Twitchy_Logo_Vector.svg; sourceTree = "<group>"; };
 		60E4700C28E93287F8B19F64 /* TVViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVViews.swift; sourceTree = "<group>"; };
 		68DC7D882795E6A8887C791D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		6978C3F152935299090A10AD /* NavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTests.swift; sourceTree = "<group>"; };
@@ -137,6 +143,7 @@
 		75F0408F82B19297E28D63C1 /* Twitchy-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Twitchy-macOS.app"; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		83BDC47203C2978016B4CDF9 /* TVStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVStorageTests.swift; sourceTree = "<group>"; };
 		86FD1D750977F41414B974C2 /* TwitchyiOSUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TwitchyiOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		90DCF46B50D693AB1D81C4A1 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelDetail.swift; sourceTree = "<group>"; };
 		9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHomeView.swift; sourceTree = "<group>"; };
 		A0DAF78D8BADD52AC5289C5D /* TwitchyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TwitchyKit; path = Packages/TwitchyKit; sourceTree = SOURCE_ROOT; };
@@ -259,6 +266,14 @@
 			path = Packages;
 			sourceTree = "<group>";
 		};
+		6742194FAD139069B753902C /* Branding */ = {
+			isa = PBXGroup;
+			children = (
+				5D365B5DAF13980A5AA68F9B /* Twitchy_Logo_Vector.svg */,
+			);
+			path = Branding;
+			sourceTree = "<group>";
+		};
 		67A70A7DA9C3C606B513FF0B /* tvOSUI */ = {
 			isa = PBXGroup;
 			children = (
@@ -315,7 +330,9 @@
 		AF91D3651F577ED986415ECE /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				90DCF46B50D693AB1D81C4A1 /* AppIcon.icon */,
 				74DD16EA9626462FA12495E4 /* Assets.xcassets */,
+				6742194FAD139069B753902C /* Branding */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -555,7 +572,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				56CF82F0CE296DF47602F190 /* AppIcon.icon in Resources */,
 				1F00016482A7E6FC721DCA3C /* Assets.xcassets in Resources */,
+				3F7136F45744994AA188BDC8 /* Twitchy_Logo_Vector.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -565,6 +584,7 @@
 			files = (
 				39D3D36F769EDF3DDCE17C9F /* Assets.xcassets in Resources */,
 				B30621809D04C17A5635E50E /* Assets.xcassets in Resources */,
+				EC0D450F2C4191635BCF2561 /* Twitchy_Logo_Vector.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -572,7 +592,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3E8FE5DC6642CA334CB4B9E4 /* AppIcon.icon in Resources */,
 				4F4C4283F47BD4426308B88B /* Assets.xcassets in Resources */,
+				A70F82CBF6AE8B049A03A3E3 /* Twitchy_Logo_Vector.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

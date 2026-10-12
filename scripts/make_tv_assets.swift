@@ -1,9 +1,13 @@
 import AppKit
 import Foundation
 
-// Native tvOS brand assets, using the same play mark as the existing app icon.
+// Native layered tvOS assets from the supplied Icon Composer foreground.
+// Usage: swift scripts/make_tv_assets.swift Apps/tvOS/Assets.xcassets/TVBrand.brandassets
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let fm = FileManager.default
+let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("Resources/AppIcon.icon/Assets/Twitchy_Logo_Vector_White.svg")
+guard let logo = NSImage(contentsOf: source) else { fatalError("Missing logo: \(source.path)") }
 func json(_ value: [String: Any], _ url: URL) throws {
     try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]).write(to: url)
@@ -14,19 +18,15 @@ func draw(_ width: Int, _ height: Int, _ layer: String, _ path: URL) throws {
     NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
     let w = CGFloat(width), h = CGFloat(height)
     if layer != "Front" {
-        NSColor(calibratedRed: 14/255, green: 14/255, blue: 16/255, alpha: 1).setFill()
+        // Match the Icon Composer's Display P3 purple; the back remains opaque.
+        NSColor(displayP3Red: 0.49585, green: 0.24915, blue: 0.94727, alpha: 1).setFill()
         NSBezierPath(rect: NSRect(x: 0, y: 0, width: w, height: h)).fill()
     }
     if layer != "Back" {
-        let edge = h * 0.63, x = (w - edge) / 2, y = (h - edge) / 2
-        NSColor(calibratedRed: 145/255, green: 70/255, blue: 1, alpha: 1).setFill()
-        NSBezierPath(roundedRect: NSRect(x: x, y: y, width: edge, height: edge), xRadius: edge * 0.22, yRadius: edge * 0.22).fill()
-        NSColor.white.setFill()
-        let triangle = NSBezierPath()
-        triangle.move(to: NSPoint(x: x + edge * 0.38, y: y + edge * 0.26))
-        triangle.line(to: NSPoint(x: x + edge * 0.38, y: y + edge * 0.74))
-        triangle.line(to: NSPoint(x: x + edge * 0.74, y: y + edge * 0.5))
-        triangle.close(); triangle.fill()
+        // Keep the mark inside the focus/parallax safe area with generous margins.
+        let edge = h * 0.90
+        logo.draw(in: NSRect(x: (w - edge) / 2, y: (h - edge) / 2, width: edge, height: edge),
+                  from: .zero, operation: .sourceOver, fraction: 1)
     }
     NSGraphicsContext.restoreGraphicsState()
     try bitmap.representation(using: .png, properties: [:])!.write(to: path)

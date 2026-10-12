@@ -32,8 +32,12 @@ extension Color {
     public init(hex: UInt32) { self.init(.sRGB, red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, opacity: 1) }
 }
 public struct BrandMark: View {
-    public init() {}
-    public var body: some View { Image(systemName: "play.square.stack.fill").font(.system(size: 36, weight: .bold)).foregroundStyle(TwitchyTheme.accent).accessibilityLabel("Twitchy") }
+    private let size: CGFloat
+    public init(size: CGFloat = 44) { self.size = size }
+    public var body: some View {
+        Image("TwitchyLogo", bundle: .module).resizable().scaledToFit()
+            .frame(width: size, height: size).accessibilityLabel("Twitchy")
+    }
 }
 public struct EmptyState: View {
     let title: String; let detail: String; let symbol: String

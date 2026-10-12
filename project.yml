@@ -80,7 +80,11 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: ch.hivenet.twitchy-tvos
       ASSETCATALOG_COMPILER_APPICON_NAME: TVBrand
-    sources: [Apps/Shared, Apps/tvOS/Assets.xcassets, Resources]
+    sources:
+      - Apps/Shared
+      - Apps/tvOS/Assets.xcassets
+      - path: Resources
+        excludes: [AppIcon.icon]
     info:
       path: Apps/tvOS/Info.plist
       properties:

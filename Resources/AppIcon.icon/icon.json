@@ -1,0 +1,50 @@
+{
+  "fill" : {
+    "solid" : "display-p3:0.49585,0.24915,0.94727,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "Twitchy_Logo_Vector_White.svg",
+          "name" : "Twitchy_Logo_Vector_White",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              -4.5499999999999545,
+              -24.603640394577724
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
