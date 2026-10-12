@@ -85,6 +85,15 @@ public struct StreamingSourceClient: Sendable {
         return try JSONCoding.decoder().decode(type, from: result.data)
     }
     public func health() async throws -> Health { let value = try await decode(Health.self, request("health")); guard value.apiVersion == "v1", value.status == "ok" else { throw ClientError.incompatibleAPI }; return value }
+    /// One small authenticated request, no retry/backoff, bounded independently of playback.
+    public func probe() async throws -> Health {
+        var r = try request("health"); r.timeoutInterval = 3
+        let result = try await http.transport.send(r)
+        guard 200..<300 ~= result.status else { throw ClientError.server(result.status) }
+        let health = try JSONCoding.decoder().decode(Health.self, from: result.data)
+        guard health.status == "ok", health.apiVersion == "v1" else { throw ClientError.incompatibleAPI }
+        return health
+    }
     public func capabilities() async throws -> Capabilities { let value = try await decode(Capabilities.self, request("capabilities")); guard value.apiVersion == "v1" else { throw ClientError.incompatibleAPI }; return value }
     public func createSession(_ body: PlaybackRequest) async throws -> PlaybackSession {
         let caps = try await capabilities()
@@ -110,29 +119,103 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     public private(set) var sources: [StreamingSource] = []
     public private(set) var activeID: UUID?
     public private(set) var error: String?
+    public private(set) var fallbackID: UUID?
+    public private(set) var isChecking = false
+    public private(set) var availability: [UUID: Bool] = [:]
+    @ObservationIgnored private var lastProbeAt: Date?
+    @ObservationIgnored private var probeTask: Task<Void, Never>?
+    @ObservationIgnored private var configurationRevision = UUID()
+    @ObservationIgnored private let probeTransport: any HTTPTransport
+    @ObservationIgnored private let playbackTransport: any HTTPTransport
     @ObservationIgnored public var onChange: (() -> Void)?
     @ObservationIgnored private var applyingRemote = false
     private let url: URL; private let secrets: any SecretStore
     private struct Saved: Codable { var sources: [StreamingSource]; var activeID: UUID? }
-    public init(url: URL = TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources")) {
-        self.url = url; self.secrets = secrets
+    public init(url: URL = TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources"), probeTransport: any HTTPTransport = NetworkTransport(requestTimeout: 3, resourceTimeout: 4), playbackTransport: any HTTPTransport = NetworkTransport(requestTimeout: 110, resourceTimeout: 120)) {
+        self.url = url; self.secrets = secrets; self.probeTransport = probeTransport; self.playbackTransport = playbackTransport
         do { if FileManager.default.fileExists(atPath: url.path) { let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: url)); sources = saved.sources; activeID = saved.activeID } } catch { self.error = "Saved sources could not be read." }
     }
-    public var active: StreamingSource? { sources.first { $0.id == activeID && $0.enabled } }
+    /// activeID is the user's preferred server and remains the synced selection.
+    public var selected: StreamingSource? { sources.first { $0.id == activeID && $0.enabled } }
+    public var active: StreamingSource? { sources.first { $0.id == (fallbackID ?? activeID) && $0.enabled } ?? selected }
+    private func invalidateProbes() {
+        configurationRevision = UUID(); probeTask?.cancel(); probeTask = nil
+        isChecking = false; lastProbeAt = nil
+    }
+    public func refreshAvailability(force: Bool = false) async {
+        if let probeTask { await probeTask.value; return }
+        if !force, let lastProbeAt, Date.now.timeIntervalSince(lastProbeAt) < 30 { return }
+        let snapshot = sources.filter(\.enabled), revision = configurationRevision
+        let clients = snapshot.map { source in (source, try? client(for: source, transport: probeTransport)) }
+        isChecking = true
+        let task = Task { [weak self] in
+            let results = await withTaskGroup(of: (StreamingSource, Health?).self) { group in
+                for (source, client) in clients {
+                    group.addTask {
+                        guard let client else { return (source, nil) }
+                        return (source, try? await client.probe())
+                    }
+                }
+                var values: [(StreamingSource, Health?)] = []
+                for await value in group { values.append(value) }
+                return values
+            }
+            guard let self, !Task.isCancelled, configurationRevision == revision else { return }
+            for (source, health) in results {
+                guard let index = sources.firstIndex(where: { $0.id == source.id }) else { continue }
+                availability[source.id] = health != nil
+                sources[index].connectionStatus = health == nil ? "Unavailable" : "Connected"
+                if let health { sources[index].serverVersion = health.serverVersion; sources[index].lastSuccessfulCheck = .now }
+            }
+            lastProbeAt = .now; isChecking = false; probeTask = nil
+            if fallbackID == nil, let activeID, availability[activeID] == false {
+                fallbackID = sources.first { $0.enabled && availability[$0.id] == true }?.id
+            }
+        }
+        probeTask = task
+        await task.value
+    }
+    public func readyClient(for request: PlaybackRequest, failedSourceID: UUID? = nil) async throws -> StreamingSourceClient {
+        let revision = configurationRevision
+        await refreshAvailability(force: failedSourceID != nil)
+        try Task.checkCancellation()
+        guard configurationRevision == revision else { throw CancellationError() }
+        guard sources.contains(where: \.enabled) else { throw ClientError.noSource }
+        let ordered = [selected].compactMap { $0 } + sources.filter { $0.id != activeID }
+        let candidates = ordered.filter { source in
+            guard source.enabled, source.id != failedSourceID, availability[source.id] == true else { return false }
+            guard let caps = source.capabilities else { return true }
+            return caps.playbackProtocols.contains("hls") && (request.contentType == "live" ? caps.live : request.contentType == "vod" ? caps.vod : caps.clips)
+        }
+        if let source = candidates.first {
+            fallbackID = source.id == activeID ? nil : source.id
+            return try client(for: source)
+        }
+        // Let the existing bounded playback retry retry the same server if no backup is ready.
+        if let failedSourceID, let source = sources.first(where: { $0.id == failedSourceID && $0.enabled }), availability[source.id] == true {
+            return try client(for: source)
+        }
+        throw URLError(.cannotConnectToHost)
+    }
     public func upsert(_ source: StreamingSource, credential: String? = nil) throws {
         _ = try SourceURL.validate(source.baseURL.absoluteString, allowLocalHTTP: source.allowLocalHTTP)
         if source.usesAuthentication, let old = sources.first(where: { $0.id == source.id }), old.baseURL != source.baseURL, credential?.isEmpty != false { throw ClientError.message("Enter a new source credential when changing an authenticated source URL.") }
+        let old = sources.first { $0.id == source.id }
+        let configurationChanged = old?.name != source.name || old?.baseURL != source.baseURL || old?.enabled != source.enabled || old?.allowLocalHTTP != source.allowLocalHTTP || old?.usesAuthentication != source.usesAuthentication || credential != nil
         if let credential { if credential.isEmpty { try secrets.delete(source.id.uuidString) } else { try secrets.write(Data(credential.utf8), key: source.id.uuidString) } }
         if let index = sources.firstIndex(where: { $0.id == source.id }) { sources[index] = source } else { sources.append(source) }
-        if activeID == nil, source.enabled { activeID = source.id }; try persist()
+        if configurationChanged { invalidateProbes(); availability[source.id] = nil }
+        if activeID == nil || selected == nil { activeID = sources.first(where: \.enabled)?.id }
+        if configurationChanged, fallbackID == source.id { fallbackID = nil }
+        try persist()
     }
-    public func select(_ id: UUID) throws { guard sources.contains(where: { $0.id == id && $0.enabled }) else { throw ClientError.noSource }; activeID = id; try persist() }
-    public func remove(_ id: UUID) throws { try secrets.delete(id.uuidString); sources.removeAll { $0.id == id }; if activeID == id { activeID = sources.first(where: \.enabled)?.id }; try persist() }
-    public func client(for source: StreamingSource? = nil) throws -> StreamingSourceClient {
+    public func select(_ id: UUID) throws { guard sources.contains(where: { $0.id == id && $0.enabled }) else { throw ClientError.noSource }; activeID = id; fallbackID = nil; invalidateProbes(); try persist() }
+    public func remove(_ id: UUID) throws { try secrets.delete(id.uuidString); invalidateProbes(); availability[id] = nil; if fallbackID == id { fallbackID = nil }; sources.removeAll { $0.id == id }; if activeID == id { activeID = sources.first(where: \.enabled)?.id }; try persist() }
+    public func client(for source: StreamingSource? = nil, transport: (any HTTPTransport)? = nil) throws -> StreamingSourceClient {
         guard let source = source ?? active else { throw ClientError.noSource }
         let secret = try secrets.read(source.id.uuidString).flatMap { String(data: $0, encoding: .utf8) }
         guard !source.usesAuthentication || secret?.isEmpty == false else { throw ClientError.unauthorized }
-        return try StreamingSourceClient(source: source, authentication: source.usesAuthentication ? .bearer(secret!) : .none)
+        return try StreamingSourceClient(source: source, authentication: source.usesAuthentication ? .bearer(secret!) : .none, transport: transport ?? playbackTransport)
     }
     public func test(_ id: UUID) async {
         guard let source = sources.first(where: { $0.id == id }) else { return }
@@ -140,10 +223,10 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
             let client = try client(for: source); let health = try await client.health(); let caps = try await client.capabilities()
             guard var current = sources.first(where: { $0.id == id }), current.baseURL == source.baseURL, current.enabled == source.enabled else { return }
             current.capabilities = caps; current.serverVersion = health.serverVersion; current.lastSuccessfulCheck = .now; current.connectionStatus = "Connected"
-            try upsert(current)
+            try upsert(current); availability[id] = true
         } catch {
             guard let i = sources.firstIndex(where: { $0.id == id && $0.baseURL == source.baseURL }) else { return }
-            sources[i].connectionStatus = error.localizedDescription; self.error = error.localizedDescription
+            availability[id] = false; sources[i].connectionStatus = error.localizedDescription; self.error = error.localizedDescription
             do { try persist() } catch { self.error = "Source status could not be saved." }
         }
     }
@@ -161,6 +244,7 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     }
     public func applySyncedSelection(_ id: UUID?) throws {
         applyingRemote = true; defer { applyingRemote = false }
+        if activeID != id { fallbackID = nil; invalidateProbes() }
         activeID = id.flatMap { id in sources.contains { $0.id == id && $0.enabled } ? id : nil }
         if activeID == nil { activeID = sources.first(where: \.enabled)?.id }; try persist()
     }

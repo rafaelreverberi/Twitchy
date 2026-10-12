@@ -51,6 +51,30 @@ final class NavigationTests: XCTestCase {
         selectDestination("Downloads", in: app)
         XCTAssertFalse(app.descendants(matching: .any)["channels.skeleton"].firstMatch.exists)
     }
+    @MainActor func testSourcesSelectionEditAndCheckAreIndependent() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
+        app.launchEnvironment["TWITCHY_UI_SOURCES_FIXTURE"] = "1"
+        app.launch()
+        let link = app.buttons["Streaming sources"]
+        XCTAssertTrue(link.waitForExistence(timeout: 10)); activate(link)
+        let backup = app.buttons["sources.select.Backup"]
+        XCTAssertTrue(backup.waitForExistence(timeout: 5)); activate(backup)
+        XCTAssertTrue(app.staticTexts["Using Backup"].waitForExistence(timeout: 5))
+        activate(app.buttons["sources.edit.Primary"])
+        let name = app.textFields["sources.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        activate(name); name.typeText(" renamed")
+        XCTAssertEqual(name.value as? String, "Primary renamed")
+        activate(app.buttons["sources.save"])
+        XCTAssertTrue(app.buttons["sources.select.Primary renamed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Using Backup"].exists)
+        activate(app.buttons["sources.check.Primary renamed"])
+        XCTAssertFalse(app.textFields["sources.name"].exists)
+        XCTAssertTrue(app.staticTexts["Using Backup"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Sources switching and independent controls"; capture.lifetime = .keepAlways; add(capture)
+    }
     @MainActor func testWelcomeAndPrimaryNavigation() {
         let app = XCUIApplication(); app.launch()
         let start = app.buttons["onboarding.complete"]

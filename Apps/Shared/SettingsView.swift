@@ -27,6 +27,7 @@ struct ProfileView: View {
         }
     }
 }
+#if !os(tvOS)
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -58,34 +59,13 @@ struct SettingsView: View {
                     if model.auth.session != nil { Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.auth.logout(); await model.refresh() } } }
                     if let error = model.auth.error, !model.isOffline { Notice(error) }
                 }
-                Section("Advanced") {
-                    #if os(tvOS)
-                    NavigationLink("Twitch application settings") {
-                        Form {
-                            TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
-                            Text("Requires Client Type: Public in the Twitch Developer Console.")
-                        }.navigationTitle("Twitch application")
-                    }
-                    #else
-                    DisclosureGroup("Twitch application settings") {
-                        TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
-                        Text("Requires Client Type: Public in the Twitch Developer Console. No client secret is needed.").font(.caption).foregroundStyle(.secondary)
-                        #if !os(tvOS)
-                        TextField("Legacy browser Client ID", text: $model.clientID)
-                        TextField("Registered redirect URI", text: $model.redirect)
-                        Button("Use legacy browser sign-in") { Task { await model.auth.loginWithBrowser(configuration: model.configuration) } }
-                        Text("Legacy browser sign-in cannot renew automatically. Use only with a Confidential app registration.").font(.caption).foregroundStyle(.secondary)
-                        #endif
-                    }.accessibilityIdentifier("oauth.advanced")
-                    #endif
-                }
+                Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
                 Section("iCloud Sync") {
                     Label(model.sync.cloud.status, systemImage: "icloud")
                     if let date = model.sync.cloud.lastSyncedAt { Text("Last synced \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                     Button("Sync now") { Task { await model.sync.sync() } }.disabled(model.sync.cloud.isSyncing)
                     Text("Sources and their access tokens, preferences, searches and watch history sync through your iCloud account. Sign in to Twitch separately on each device. Downloaded files stay on this device.").font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Sources") { NavigationLink { SourcesView() } label: { Label("Streaming sources", systemImage: "server.rack") }; Text(model.sources.active?.name ?? "No streaming source selected").foregroundStyle(.secondary) }
                 Section("Playback") {
                     Picker("Preferred quality", selection: $personal.data.preferences.preferredQuality) {
                         Text("Best").tag("auto")
@@ -109,6 +89,10 @@ struct SettingsView: View {
                 }
                 Section("Downloads") { Text("Stored: \(ByteCountFormatter.string(fromByteCount: model.downloads.storageBytes, countStyle: .file))"); Text("Authorized media only. Transfers stay local. Apple TV does not store offline downloads.").font(.caption).foregroundStyle(.secondary) }
                 Section("Appearance") { Toggle("Dark theme", isOn: $personal.data.preferences.darkTheme); Toggle("Reduce animations", isOn: $personal.data.preferences.reduceMotion) }
+                Section {
+                    NavigationLink { AdvancedSettingsView() } label: { Label("Advanced", systemImage: "gearshape.2") }
+                        .accessibilityIdentifier("settings.advanced")
+                }
                 Section("About") {
                     Text("Twitchy 0.1.0 (1) · Rafael Reverberi")
                     NavigationLink("Privacy") { LegalView(title: "Privacy", text: "Twitch authentication and metadata go directly to Twitch. Your configured streaming source receives playback and authorized download requests, plus its own credentials. Twitch credentials are never sent to it. Twitch sign-in stays in device-only Keychain entries. With a provisioned iCloud build, sources including their access tokens, preferences, public app settings, recent searches and watch history sync through encrypted private CloudKit records. The offline sync journal is encrypted; imported source tokens enter the source Keychain. Downloads stay local. Viewing time is used locally to rank live channels. No analytics is collected. Chat history is held only in bounded memory.") }
@@ -127,33 +111,111 @@ struct SettingsView: View {
     }
 }
 struct LegalView: View { var title: String; var text: String; var body: some View { ScrollView { Text(text).padding(28).frame(maxWidth: 700, alignment: .leading) }.navigationTitle(title) } }
+struct AdvancedSettingsView: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var model = model
+        Form {
+            Section("Twitch application settings") {
+                TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
+                Text("Requires Client Type: Public in the Twitch Developer Console. No client secret is needed.").font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("Legacy browser sign-in") {
+                    TextField("Legacy browser Client ID", text: $model.clientID)
+                    TextField("Registered redirect URI", text: $model.redirect)
+                    Button("Use legacy browser sign-in") { Task { await model.auth.loginWithBrowser(configuration: model.configuration) } }
+                    Text("Legacy browser sign-in cannot renew automatically. Use only with a Confidential app registration.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.accessibilityIdentifier("oauth.advanced")
+        }
+        #if !os(tvOS)
+        .formStyle(.grouped)
+        #endif
+        .navigationTitle("Advanced")
+    }
+}
 struct SourcesView: View {
     @Environment(AppModel.self) private var model
     @State private var editing: StreamingSource?
     @State private var adding = false
+    @State private var removing: StreamingSource?
+    @State private var testing: Set<UUID> = []
     @State private var error: String?
     var body: some View {
-        List {
-            Section { Text("Video playback uses the active source. Twitch sign-in and chat remain independent.").foregroundStyle(.secondary) }
-            if let error { Notice(error) }
-            if let error = model.sources.error { Notice(error) }
-            ForEach(model.sources.sources) { source in
-                Section {
-                    HStack { VStack(alignment: .leading) { Text(source.name).font(.headline); Text(source.baseURL.absoluteString).font(.caption).foregroundStyle(.secondary) }; Spacer(); if source.id == model.sources.activeID { Label("Active", systemImage: "checkmark.circle.fill").foregroundStyle(TwitchyTheme.live) } }
-                    Text(source.connectionStatus).font(.caption)
-                    if let version = source.serverVersion { Text("Server \(version) · API \(source.capabilities?.apiVersion ?? "unknown")") }
-                    if let caps = source.capabilities { Text("Protocols: \(caps.playbackProtocols.joined(separator: ", "))"); Text("Live: \(caps.live ? "Yes" : "No") · VOD: \(caps.vod ? "Yes" : "No") · Downloads: \(caps.downloads ? "Yes" : "No")"); if let ad = caps.adHandling { Text("Server filtering: \(ad)") } }
-                    if let date = source.lastSuccessfulCheck { Text("Last successful check: \(date.formatted())").font(.caption) }
-                    HStack { Button("Test") { Task { await model.sources.test(source.id) } }; Button("Edit") { editing = source }; Button("Select") { perform { try model.sources.select(source.id) } }.disabled(!source.enabled); Button(source.enabled ? "Disable" : "Enable") { var copy = source; copy.enabled.toggle(); perform { try model.sources.upsert(copy) } } }
-                    Button("Remove source", role: .destructive) { perform { try model.sources.remove(source.id) } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(model.sources.active.map { "Using \($0.name)" } ?? "Add your first server", systemImage: "server.rack")
+                        .font(.title2.bold()).accessibilityIdentifier("sources.current")
+                    Text("Choose your main server. If it becomes unavailable, Twitchy automatically uses another enabled server.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-            }
-            Section { Button { adding = true } label: { Label("Add streaming source", systemImage: "plus") }.accessibilityIdentifier("sources.add") }
+                if let error { Notice(error) }
+                if model.sources.sources.isEmpty {
+                    Button { adding = true } label: { Label("Add server", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 44) }
+                        .buttonStyle(.borderedProminent).accessibilityIdentifier("sources.add")
+                }
+                ForEach(model.sources.sources) { source in
+                    VStack(alignment: .leading, spacing: 16) {
+                        Button { perform { try model.sources.select(source.id) } } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: source.id == model.sources.activeID ? "checkmark.circle.fill" : "circle")
+                                    .font(.title2).foregroundStyle(source.id == model.sources.activeID ? TwitchyTheme.accent : Color.secondary)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(source.name).font(.headline).foregroundStyle(.primary)
+                                    Text(source.baseURL.host ?? source.baseURL.absoluteString).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer(minLength: 8)
+                                if source.id == model.sources.activeID { Text("Primary").font(.caption.bold()).foregroundStyle(TwitchyTheme.accent) }
+                            }.frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(!source.enabled).accessibilityIdentifier("sources.select.\(source.name)")
+                        HStack(spacing: 8) {
+                            Image(systemName: source.enabled ? (model.sources.availability[source.id] == false ? "wifi.slash" : "network") : "pause.circle")
+                            Text(!source.enabled ? "Disabled" : model.sources.isChecking ? "Checking…" : model.sources.availability[source.id].map { $0 ? "Available" : "Unavailable" } ?? "Not checked yet")
+                            if source.id == model.sources.fallbackID { Text("· In use").foregroundStyle(TwitchyTheme.accent) }
+                            Spacer()
+                        }.font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Button { editing = source } label: { Label("Edit", systemImage: "pencil").frame(maxWidth: .infinity, minHeight: 36) }
+                                .accessibilityIdentifier("sources.edit.\(source.name)")
+                            Button {
+                                testing.insert(source.id)
+                                Task { await model.sources.test(source.id); testing.remove(source.id) }
+                            } label: { Label(testing.contains(source.id) ? "Checking…" : "Check", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, minHeight: 36) }
+                                .disabled(!source.enabled || testing.contains(source.id)).accessibilityIdentifier("sources.check.\(source.name)")
+                        }.buttonStyle(.bordered)
+                        DisclosureGroup("Details") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(source.baseURL.absoluteString).font(.caption).textSelection(.enabled)
+                                if let version = source.serverVersion { Text("Server \(version)").font(.caption) }
+                                if let caps = source.capabilities {
+                                    Text([caps.live ? "Live" : nil, caps.vod ? "Videos" : nil, caps.clips ? "Clips" : nil, caps.downloads ? "Downloads" : nil].compactMap { $0 }.joined(separator: " · ")).font(.caption)
+                                }
+                                Text(source.connectionStatus).font(.caption).foregroundStyle(.secondary)
+                                Toggle("Enabled", isOn: Binding(get: { source.enabled }, set: { enabled in
+                                    var copy = source; copy.enabled = enabled; perform { try model.sources.upsert(copy) }
+                                }))
+                                Button("Remove server", role: .destructive) { removing = source }.buttonStyle(.borderless)
+                                    .frame(minHeight: 44)
+                            }.padding(.top, 12)
+                        }.font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(20).background(TwitchyTheme.secondary, in: RoundedRectangle(cornerRadius: 20))
+                }
+            }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
         }
-        #if os(macOS)
-        .buttonStyle(.borderless)
-        #endif
-        .navigationTitle("Sources").sheet(isPresented: $adding) { SourceEditor(source: nil) }.sheet(item: $editing) { SourceEditor(source: $0) }
+        .background(TwitchyTheme.background)
+        .navigationTitle("Sources")
+        .toolbar {
+            if !model.sources.sources.isEmpty {
+                ToolbarItem { Button { adding = true } label: { Label("Add server", systemImage: "plus") }.accessibilityIdentifier("sources.add") }
+            }
+        }
+        .animation(model.personal.data.preferences.reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.sources.activeID)
+        .animation(model.personal.data.preferences.reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.sources.isChecking)
+        .task { await model.sources.refreshAvailability() }
+        .sheet(isPresented: $adding) { SourceEditor(source: nil) }.sheet(item: $editing) { SourceEditor(source: $0) }
+        .confirmationDialog("Remove \(removing?.name ?? "server")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+            Button("Remove server", role: .destructive) { if let removing { perform { try model.sources.remove(removing.id) }; self.removing = nil } }
+        }
     }
     private func perform(_ action: () throws -> Void) { do { try action(); error = nil } catch { self.error = error.localizedDescription } }
 }
@@ -167,37 +229,72 @@ struct SourceEditor: View {
     @State private var authenticate = false
     @State private var token = ""
     @State private var error: String?
+    init(source: StreamingSource?) {
+        self.source = source
+        _name = State(initialValue: source?.name ?? "")
+        _url = State(initialValue: source?.baseURL.absoluteString ?? "")
+        _localHTTP = State(initialValue: source?.allowLocalHTTP ?? false)
+        _authenticate = State(initialValue: source?.usesAuthentication ?? false)
+    }
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Name", text: $name).accessibilityIdentifier("sources.name")
-                TextField("HTTPS base URL", text: $url).accessibilityIdentifier("sources.url")
-                Toggle("Allow local HTTP for development", isOn: $localHTTP)
-                Toggle("Source requires bearer authentication", isOn: $authenticate)
-                if authenticate { SecureField(source == nil ? "Source token" : "New token (blank keeps existing)", text: $token) }
-                Text("Use a source token issued by your server. Never enter a Twitch token. Local HTTP is restricted to loopback and private network addresses.").font(.caption).foregroundStyle(.secondary)
+                Section("Server") {
+                    TextField("Name", text: $name).accessibilityIdentifier("sources.name").autocorrectionDisabled()
+                    TextField("https://your-server.com", text: $url).accessibilityIdentifier("sources.url")
+                        #if os(iOS)
+                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        #endif
+                }
+                Section("Access") {
+                    Toggle("Access token required", isOn: $authenticate)
+                    if authenticate {
+                        SecureField(source == nil ? "Server access token" : "New token (blank keeps existing)", text: $token)
+                        Text("Use the token from your server.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    DisclosureGroup("Advanced") {
+                        Toggle("Allow HTTP on your local network", isOn: $localHTTP)
+                        Text("Only for local development servers. Never enter Twitch credentials here.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if let error { Notice(error) }
-                Button("Save source") {
-                    do {
-                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { throw ClientError.message("Give your source a name.") }
-                        let validated = try SourceURL.validate(url, allowLocalHTTP: localHTTP)
-                        var value = source ?? StreamingSource(name: name, baseURL: validated)
-                        value.name = name; value.baseURL = validated; value.allowLocalHTTP = localHTTP; value.usesAuthentication = authenticate
-                        if value.baseURL != source?.baseURL { value.capabilities = nil; value.serverVersion = nil; value.lastSuccessfulCheck = nil; value.connectionStatus = "Not tested" }
-                        let credential: String? = !authenticate ? "" : (!token.isEmpty ? token : nil)
-                        try model.sources.upsert(value, credential: credential); dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }.disabled(name.isEmpty || url.isEmpty).accessibilityIdentifier("sources.save")
             }
             #if !os(tvOS)
             .formStyle(.grouped)
             #endif
-            .navigationTitle(source == nil ? "Add source" : "Edit source").toolbar { ToolbarItem { Button("Cancel") { dismiss() } } }
-        }.onAppear { if let source { name = source.name; url = source.baseURL.absoluteString; localHTTP = source.allowLocalHTTP; authenticate = source.usesAuthentication } }
+            .navigationTitle(source == nil ? "Add server" : "Edit server")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || url.isEmpty)
+                        .accessibilityIdentifier("sources.save")
+                }
+            }
+        }
         #if os(macOS)
-        .frame(width: 600, height: 440)
+        .frame(width: 600, height: 520)
         #endif
     }
+    private func save() {
+        do {
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedName.isEmpty else { throw ClientError.message("Give your server a name.") }
+            let validated = try SourceURL.validate(url, allowLocalHTTP: localHTTP)
+            var value = source ?? StreamingSource(name: trimmedName, baseURL: validated)
+            value.name = trimmedName; value.baseURL = validated; value.allowLocalHTTP = localHTTP; value.usesAuthentication = authenticate
+            if value.baseURL != source?.baseURL { value.capabilities = nil; value.serverVersion = nil; value.lastSuccessfulCheck = nil; value.connectionStatus = "Not tested" }
+            let credential: String? = !authenticate ? "" : (!token.isEmpty ? token : nil)
+            if authenticate, source?.usesAuthentication != true, token.isEmpty { throw ClientError.message("Enter the access token from your server.") }
+            try model.sources.upsert(value, credential: credential)
+            Task { await model.sources.refreshAvailability(force: true) }
+            dismiss()
+        } catch { self.error = error.localizedDescription }
+    }
+
 }
 
 #Preview { SettingsView().environment(AppModel()) }
+
+#endif

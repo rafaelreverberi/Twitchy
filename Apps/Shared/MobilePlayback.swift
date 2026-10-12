@@ -48,7 +48,7 @@ import TwitchySources
         surface.configure(automaticPiP: pipEnabled)
         // Opening the same content is a presentation change, including while it is loading.
         if let current = selection, current.login == channel.login, current.contentType == type, current.contentID == id,
-           sourceID == model.sources.activeID, sourceURL == model.sources.active?.baseURL,
+           sourceID == model.sources.activeID, sourceURL == model.sources.selected?.baseURL,
            playbackTask != nil || model.playback.player.currentItem != nil {
             self.thumbnailURL = thumbnailURL ?? self.thumbnailURL
             self.duration = duration ?? self.duration
@@ -59,7 +59,7 @@ import TwitchySources
         retryAttempt = 0; error = nil; recovering = false; model.error = nil
         var active = channel; active.contentType = type; active.contentID = id; active.returnToPlayback = true
         selection = active; self.title = title ?? channel.name; self.category = category ?? ""; self.avatar = avatar; self.thumbnailURL = thumbnailURL; self.duration = duration
-        sourceID = model.sources.activeID; sourceURL = model.sources.active?.baseURL
+        sourceID = model.sources.activeID; sourceURL = model.sources.selected?.baseURL
         connectChat()
         playbackTask = Task { [weak self] in
             guard let self else { return }
@@ -129,7 +129,7 @@ import TwitchySources
         }
     }
     func sourceChanged() {
-        guard !model.isOfflinePlayback, selection != nil, sourceID != model.sources.activeID || sourceURL != model.sources.active?.baseURL else { return }
+        guard !model.isOfflinePlayback, selection != nil, sourceID != model.sources.activeID || sourceURL != model.sources.selected?.baseURL else { return }
         stop()
     }
     func retry() {
