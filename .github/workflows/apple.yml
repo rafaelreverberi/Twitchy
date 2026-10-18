@@ -2,6 +2,12 @@ name: Apple builds and service tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_ios_ui:
+        description: Run the optional iPhone simulator UI tests
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -29,6 +35,7 @@ jobs:
       - run: xcodebuild -project Twitchy.xcodeproj -scheme '${{ matrix.scheme }}' -destination '${{ matrix.destination }}' CODE_SIGNING_ALLOWED=NO build
 
   ios-ui:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ios_ui }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
