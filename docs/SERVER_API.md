@@ -1,6 +1,6 @@
 # Streaming Source API v1
 
-[SERVER_API.json](SERVER_API.json) is the normative OpenAPI 3.1 document. This is a **proposed contract**, not a claim of production server behavior. The Apple client and deterministic local fixture implement its client/test sides. A Go/Docker backend is a separate project.
+[SERVER_API.json](SERVER_API.json) is the normative OpenAPI 3.1 document. This is a **proposed contract**, not a claim of production server behavior. The Apple client and deterministic local fixture implement its client/test sides. The optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) is the separate Go/Docker implementation; consult its documentation for supported behavior.
 
 All wire keys use snake_case; dates use UTC RFC3339/ISO8601 without fractional seconds for v1 client compatibility; identifiers match `[a-zA-Z0-9_-]{1,199}`. New optional fields may be added without changing v1. Missing required fields or incompatible api_version are errors. Clients ignore unknown fields. Responses are JSON except file transfers. Base URL may include a path prefix. Maximum control request size should be bounded. Server responses must not contain secrets in error text.
 
@@ -30,7 +30,7 @@ GET /v1/downloads/{downloadId}/file requires ownership and source auth and strea
 
 DELETE /v1/downloads/{downloadId} cancels/deletes the job and returns idempotent 204. Enforce principal ownership on every operation. Define TTLs for prepared files. The client polls only active preparation jobs at two-second intervals and stops cancelled work. Local transfer retries start over; HTTP Range/background recovery is future work.
 
-## Backend project handoff
+## Implementing another source
 1. Implement these exact models/routes and JSON/error/date encodings in Go, including discovery and independent auth.
 2. Provide trusted HTTPS and AVPlayer-compatible HLS sessions with expiry, server-side ownership and cleanup.
 3. Advertise only actual capabilities. Keep acquisition/filtering strategies separate from official Twitch account services.

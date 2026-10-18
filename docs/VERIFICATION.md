@@ -1,4 +1,16 @@
-# Verification — 2026-10-09
+# Verification record
+
+This is a historical development log, not the current feature list. Start with the [README](../README.md) and [known limitations](LIMITATIONS.md). Later platform evidence appears in [tvOS interface](TVOS_INTERFACE.md), [macOS interface](MACOS_INTERFACE.md), and [offline download regression](OFFLINE_DOWNLOAD_REGRESSION.md). Old statements about unavailable TV runtimes or planned CloudKit work describe the initial snapshot.
+
+Diagnostic screenshots have been removed from the public tree; the recorded checks below remain historical evidence.
+
+## Documentation refresh — 2026-10-18
+
+Local documentation/asset links and explicit README navigation anchors were checked (85 references); the OpenAPI JSON/reference check and `git diff --check` passed. This update changes documentation and assets only; no new app binary or live-account verification was performed.
+
+The latest remote Apple workflow inspected before this update (commit `711f388`) failed in five iOS UI tests covering offline playback, playback lifecycle, transient startup recovery, unavailable streams and VOD seeking. That existing failure is not resolved by this documentation update. Do not treat the README as a claim of passing CI.
+
+## Initial verification — 2026-10-09
 
 The table below records the initial local implementation verification, before the repository was uploaded to GitHub. The later OAuth Pages deployment is verified separately below.
 
@@ -61,4 +73,4 @@ Browser verification confirmed the callback script executes under its Content-Se
 
 The owner confirmed that the supplied bundled Client ID is Public. Twitch's live /oauth2/device endpoint accepted it and returned an activation response; no user consent, access tokens, or refresh tokens were obtained in that check. Default sign-in now uses Device Code Flow on all platforms, with one main button and hidden advanced configuration. Mac/iOS open the activation URL in the default browser.
 
-39 service/integration tests pass, including authorization_pending then successful device sign-in, cancellation, session restoration, concurrent foreground/startup refresh, invalid refresh handling, configuration errors preserving credentials, and recovery after offline validation of a rotated refresh token. macOS, iOS Simulator and tvOS Simulator builds pass. The iPhone navigation test passes and asserts that sign-in is visible without Client ID fields. The new Mac account settings were verified in the running app; see screenshots/macos-signin.png. Apple TV still has no installed simulator runtime. Live account consent and automatic refresh with the user's real credentials remain unverified.
+39 service/integration tests pass, including authorization_pending then successful device sign-in, cancellation, session restoration, concurrent foreground/startup refresh, invalid refresh handling, configuration errors preserving credentials, and recovery after offline validation of a rotated refresh token. macOS, iOS Simulator and tvOS Simulator builds pass. The iPhone navigation test passes and asserts that sign-in is visible without Client ID fields. The new Mac account settings were verified in the running app. Apple TV still has no installed simulator runtime. Live account consent and automatic refresh with the user's real credentials remain unverified.

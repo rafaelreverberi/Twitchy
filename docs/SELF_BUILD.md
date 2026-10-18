@@ -29,4 +29,4 @@ Configure a reachable compatible streaming source. Self-hosting and publishing s
 
 [PRIVACY.md](../PRIVACY.md) describes the data flow, local storage and automatic private CloudKit sync, including source bearer tokens. Twitch login credentials remain device-local. Keep this notice accurate for your fork and explain any additional processing your backend performs.
 
-The repository includes the project's icon assets, logged-out interface screenshots and generated test media. Reference mockups and real stream captures supplied during development are not bundled. A code license does not grant rights to Twitch branding, streamer portraits or media fetched at runtime; assess those rights separately before republishing content or promotional screenshots.
+The repository includes the project's icon assets, README banner and generated test media. Reference mockups and real stream captures supplied during development are not bundled. A code license does not grant rights to Twitch branding, streamer portraits or media fetched at runtime; assess those rights separately before republishing content or promotional screenshots.

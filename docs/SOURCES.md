@@ -1,5 +1,20 @@
 # Streaming sources
 
+A source supplies video; Twitch sign-in supplies account data and chat. You need both for the complete experience. The app does not acquire Twitch video or filter ads itself.
+
+## Connect a source
+
+1. Set up a source implementing [Source API v1](SERVER_API.md), such as the optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server).
+2. On iPhone, iPad or Mac, open **Profile → Settings → Sources**. On Apple TV, open **Settings → Sources**.
+3. Add the server's base URL and its independent bearer token if required.
+4. Check the connection and capabilities, then select the source as Primary.
+
+For Twitchy Server, follow its [Docker/HTTPS setup](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/SETUP.md). On the same Mac, local development can use `http://localhost:8080` with local HTTP enabled. Other devices need a reachable LAN or trusted HTTPS address. Set the server's `PUBLIC_BASE_URL` to the player-reachable address too, because it is used in generated media URLs.
+
+Twitchy Server offers **server-side adblock / ad filtering** for recognized, marked segments. It may pause video during ad breaks; unrecognized ads can remain. See [ad handling](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/ADBLOCK.md). Other sources may behave differently.
+
+## Manage sources
+
 Open Profile → Settings → Sources. Add a name and HTTPS base URL, optionally enable independent bearer authentication and enter the credential issued by that server. On iPhone/iPad and Mac, tap a server to make it Primary; Edit and Check have separate buttons, and version/capability information, disabling and removal live under Details. Local HTTP is under Advanced in the editor. Removing a source also deletes its Keychain entry. Explicit changes to the preferred server stop the current playback session. Apple TV keeps its existing settings and source screens.
 
 Sources sits above iCloud Sync in Settings. Twitch application configuration is under Advanced, immediately above About.

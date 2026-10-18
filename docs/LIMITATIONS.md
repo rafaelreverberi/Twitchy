@@ -1,8 +1,8 @@
 # Known limitations and distribution boundaries
 
-0.1.0 is a functional development client, not a finished App Store release. The feature matrix in README distinguishes implemented code from pending work.
+0.1.0 is a functional development client, not a finished App Store release. The feature status in [README](../README.md) distinguishes implemented code from pending work.
 
-Real Twitch OAuth, consent/callback registration, actual Helix account data, live EventSub receive/send/migration/revocation, and public Device Flow refresh have not been account-tested without a developer registration. Source integration is verified against the localhost fixture; no external Go backend exists here. The browser flow needs an owned HTTPS callback page (provided as a static bridge) registered with Twitch. Host it without analytics/content injection and test its return to the app. Public Device Flow requires no callback host.
+Real Twitch OAuth, consent/callback registration, actual Helix account data, live EventSub receive/send/migration/revocation, and public Device Flow refresh have not been account-tested without a developer registration. Source integration is verified against the localhost fixture; the optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) is maintained separately and is not bundled with the Apple app. The browser flow needs an owned HTTPS callback page (provided as a static bridge) registered with Twitch. Host it without analytics/content injection and test its return to the app. Public Device Flow requires no callback host.
 
 All official Helix discovery endpoints need a token. Logged-out users can navigate/setup but cannot load live metadata. Live recommendations are computed locally from viewing sessions; no Twitch personalized recommendation endpoint is used. Global VOD/clip text search, public follow mutation and suggestion endpoints are not invented. Following opens the official Twitch channel page. Subscription information requires an extra permission and currently has no UI.
 
