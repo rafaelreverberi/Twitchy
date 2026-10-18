@@ -32,6 +32,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install playback fixture dependency
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
       - name: Test native iPhone navigation
         shell: bash
         run: |
@@ -40,4 +42,28 @@ jobs:
             echo '::warning::No available iPhone simulator runtime; UI test skipped.'
             exit 0
           fi
-          xcodebuild -project Twitchy.xcodeproj -scheme Twitchy-iOS -destination "platform=iOS Simulator,id=$device_id" CODE_SIGNING_ALLOWED=NO test
+          fixture_dir="$RUNNER_TEMP/twitchy-ui-media"
+          ./scripts/make-playback-fixture.sh "$fixture_dir"
+          python3 MockServer/server.py --port 8181 --media-dir "$fixture_dir" --unique-sessions &
+          mock_pid=$!
+          trap 'kill "$mock_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..50}; do
+            if ! kill -0 "$mock_pid" 2>/dev/null; then
+              echo '::error::UI fixture server exited before becoming ready.'
+              exit 1
+            fi
+            if curl --fail --silent --output /dev/null http://localhost:8181/v1/health; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != true ]; then
+            echo '::error::UI fixture server did not become ready.'
+            exit 1
+          fi
+          curl --fail --silent http://localhost:8181/__test__/metrics
+          curl --fail --silent --output /dev/null http://localhost:8181/media/fixture.m3u8
+          # Playback tests compare shared server counters and must not overlap.
+          xcodebuild -project Twitchy.xcodeproj -scheme Twitchy-iOS -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
