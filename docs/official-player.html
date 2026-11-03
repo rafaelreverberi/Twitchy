@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="twitchy-official-player-v1" content="1">
+<title>Twitchy · Official Twitch Player</title>
+<style>
+html,body{margin:0;background:#111;color:#eee;font:15px system-ui}#player{width:100%;height:100vh;min-width:400px;min-height:300px}#message{padding:20px}button{font:inherit;padding:10px 18px}a{color:#b99aff}
+</style>
+<script src="https://player.twitch.tv/js/embed/v1.js"></script>
+</head>
+<body>
+<div id="player"></div><p id="message" hidden></p>
+<script>
+'use strict';
+(() => {
+  const parameters = new URLSearchParams(location.search);
+  const channel = (parameters.get('channel') || '').toLowerCase();
+  const video = parameters.get('video') || '';
+  const send = (type, extra = {}) => {
+    const value = {type, ...extra};
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.twitchyPlayer) {
+      window.webkit.messageHandlers.twitchyPlayer.postMessage(value);
+    }
+    window.dispatchEvent(new CustomEvent('twitchy-player-event', {detail: value}));
+  };
+  if ((!/^[a-z0-9_]{1,25}$/.test(channel) && !/^v[0-9]{1,30}$/.test(video)) || !window.Twitch) {
+    document.getElementById('message').hidden = false;
+    document.getElementById('message').textContent = 'Open this page with a valid channel or video. Twitchy uses the official Twitch player, which may include ads.';
+    send('error'); return;
+  }
+  const player = new Twitch.Player('player', {
+    width:'100%',height:'100%',parent:[location.hostname],autoplay:true,muted:true,
+    ...(channel ? {channel} : {video})
+  });
+  const qualities = () => player.getQualities().map(q => typeof q === "string" ? q : q.group || q.name).filter(q => typeof q === "string");
+  // Only documented SDK methods. Twitch's iframe, ads and controls remain unobscured.
+  window.twitchyPlayer = Object.freeze({
+    play: () => player.play(), pause: () => player.pause(),
+    muted: value => player.setMuted(value === true),
+    volume: value => player.setVolume(Math.min(1,Math.max(0,Number(value) || 0))),
+    quality: value => { if (typeof value === 'string' && (value === 'auto' || qualities().includes(value))) player.setQuality(value); }
+  });
+  player.addEventListener(Twitch.Player.READY, () => send('ready', {qualities:qualities()}));
+  player.addEventListener(Twitch.Player.PLAYING, () => { send('ready', {qualities:qualities()}); send('playing'); });
+  player.addEventListener(Twitch.Player.PLAY, () => send('buffering'));
+  player.addEventListener(Twitch.Player.PAUSE, () => send('paused'));
+  player.addEventListener(Twitch.Player.OFFLINE, () => send('offline'));
+  player.addEventListener(Twitch.Player.ENDED, () => send('ended'));
+  player.addEventListener(Twitch.Player.PLAYBACK_BLOCKED, () => send('blocked'));
+  let previous = '';
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    const status = {volume:player.getVolume(),muted:player.getMuted(),quality:player.getQuality()};
+    const signature = JSON.stringify(status);
+    if (signature !== previous) { previous = signature; send('status', status); }
+  },1000); // Local SDK state only; no service health polling.
+
+})();
+</script>
+</body>
+</html>
