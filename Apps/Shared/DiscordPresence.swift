@@ -10,6 +10,7 @@ import Network
     struct Viewing: Equatable {
         let id: UUID
         let channel: String
+        let channelLogin: String
         let title: String?
         let avatarURL: URL?
         let playing: Bool
@@ -25,9 +26,11 @@ import Network
     private var desiredChannel: String?
     private var desiredTitle: String?
     private var desiredAvatar: URL?
+    private var desiredChannelURL: URL?
     private var publishedChannel: String?
     private var publishedTitle: String?
     private var publishedAvatar: URL?
+    private var publishedChannelURL: URL?
     private var publishedTimestamp: Int64 = 0
     private var connection: NWConnection?
     private var ready = false
@@ -72,6 +75,11 @@ import Network
         desiredTitle = visible?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         if desiredTitle?.count ?? 0 < 2 { desiredTitle = nil }
         desiredAvatar = visible?.avatarURL
+        desiredChannelURL = visible.flatMap { viewing in
+            let login = viewing.channelLogin
+            guard !login.isEmpty, login.range(of: #"\A[A-Za-z0-9_]+\z"#, options: .regularExpression) != nil else { return nil }
+            return URL(string: "https://www.twitch.tv/\(login)")
+        }
 
         if ready {
             publish()
@@ -125,16 +133,18 @@ import Network
         publishedChannel = nil
         publishedTitle = nil
         publishedAvatar = nil
+        publishedChannelURL = nil
     }
 
     private func publish() {
         guard let connection, publishedChannel != desiredChannel || publishedTitle != desiredTitle || publishedAvatar != desiredAvatar ||
-              (desiredChannel != nil && publishedTimestamp != timestamp) else { return }
+              publishedChannelURL != desiredChannelURL || (desiredChannel != nil && publishedTimestamp != timestamp) else { return }
         let activity: Any
         if let desiredChannel {
             var assets = ["large_image": "twitchy_icon", "large_text": "Twitchy"]
             if let desiredAvatar, desiredAvatar.scheme == "https", desiredAvatar.absoluteString.count <= 300 {
                 assets["small_image"] = desiredAvatar.absoluteString
+                assets["small_url"] = desiredChannelURL?.absoluteString
                 assets["small_text"] = "Watching " + String(desiredChannel.prefix(100))
             }
             var payload: [String: Any] = [
@@ -152,6 +162,7 @@ import Network
         publishedChannel = desiredChannel
         publishedTitle = desiredTitle
         publishedAvatar = desiredAvatar
+        publishedChannelURL = desiredChannelURL
         publishedTimestamp = timestamp
         send(1, json: [
             "cmd": "SET_ACTIVITY",

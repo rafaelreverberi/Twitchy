@@ -182,7 +182,7 @@ import Network
         )
         let streamTitle = active.title == selection.name ? nil : active.title
         let sourceTitle = matchesSelection ? playback.session?.title : nil
-        return .init(id: selection.id, channel: selection.name, title: streamTitle ?? sourceTitle, avatarURL: desktopAvatarURL,
+        return .init(id: selection.id, channel: selection.name, channelLogin: selection.login, title: streamTitle ?? sourceTitle, avatarURL: desktopAvatarURL,
                      playing: matchesSelection && playback.hasMedia && playback.state == .playing && !playback.isPaused)
     }
     var nowPlaying: DesktopNowPlaying?
