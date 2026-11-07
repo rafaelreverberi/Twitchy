@@ -32,14 +32,29 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendab
 }
 public final class NetworkTransport: HTTPTransport, @unchecked Sendable {
     private let session: URLSession
-    public init(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 60) {
+    private let maximumResponseBytes: Int?
+    public init(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 60, maximumResponseBytes: Int? = nil) {
+        self.maximumResponseBytes = maximumResponseBytes
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = requestTimeout; config.timeoutIntervalForResource = resourceTimeout
         config.httpCookieStorage = nil; config.urlCredentialStorage = nil
         session = URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
     }
     public func send(_ request: URLRequest) async throws -> HTTPResult {
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        if let maximumResponseBytes {
+            let (bytes, result) = try await session.bytes(for: request)
+            defer { bytes.task.cancel() }
+            response = result
+            guard result.expectedContentLength <= maximumResponseBytes else { throw ClientError.invalidResponse }
+            var buffer = Data()
+            for try await byte in bytes {
+                guard buffer.count < maximumResponseBytes else { throw ClientError.invalidResponse }
+                buffer.append(byte)
+            }
+            data = buffer
+        } else { (data, response) = try await session.data(for: request) }
         guard let response = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
         var headers: [String: String] = [:]
         for (key, value) in response.allHeaderFields { headers[String(describing: key).lowercased()] = String(describing: value) }

@@ -62,12 +62,18 @@ public struct OAuthAttempt: Sendable {
     private var validationID = UUID()
     public var isSigningIn: Bool { status == "Signing in" || deviceCode != nil }
     public init(secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.twitch"), transport: any HTTPTransport = NetworkTransport()) { self.secrets = secrets; http = HTTPClient(transport: transport); super.init() }
-    public func restore(validateOnline: Bool = true) async {
+    public func restore(validateOnline: Bool = true, explicitDeviceClientID: String? = nil) async {
         connectionUnavailable = false
         let current = generation
         do {
             if let bytes = try secrets.read("session") {
-                session = try JSONDecoder().decode(AuthSession.self, from: bytes)
+                let stored = try JSONDecoder().decode(AuthSession.self, from: bytes)
+                guard !stored.clientID.isEmpty,
+                      !OAuthAppSettings.isFormerBundledClientID(stored.clientID) || stored.clientID == explicitDeviceClientID else {
+                    try secrets.delete("session")
+                    return
+                }
+                session = stored
                 if validateOnline { try await validate() }
                 else { status = "Signed in" }
             }

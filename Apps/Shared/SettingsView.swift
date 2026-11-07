@@ -10,7 +10,7 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 20) { DiscoveryImage(model.user.flatMap { URL(string: $0.profileImageUrl) }, symbol: "person.crop.circle").frame(width: 90, height: 90).clipShape(Circle()); VStack(alignment: .leading) { Text(model.user?.displayName ?? model.auth.session?.login ?? "Your Twitch account").font(.title.bold()); Text(model.user.map { "@\($0.login)" } ?? model.auth.session.map { "@\($0.login)" } ?? "Connect your Twitch account").foregroundStyle(.secondary); Text(model.accountStatus).font(.caption).foregroundStyle(TwitchyTheme.live) } }
                 if let error = model.auth.error, !model.isOffline { Notice(error) }
-                if !model.accountSignedIn { Button("Sign in with Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
+                if !model.accountSignedIn { Button(model.twitchConnectTitle) { Task { await model.login() } }.buttonStyle(.borderedProminent).disabled(model.auth.isSigningIn) }
                 else { Button("Sign out") { Task { model.chat.disconnect(); await model.auth.logout(); await model.playback.stop(); await model.refresh() } } }
                 Button { model.showingSettings = true } label: { Label("Settings", systemImage: "gearshape").font(.headline) }.accessibilityIdentifier("profile.settings")
                 Divider()
@@ -31,6 +31,10 @@ struct ProfileView: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    #if os(macOS)
+    @AppStorage(DiscordPresence.enabledKey) private var discordEnabled = false
+    @AppStorage(DiscordPresence.applicationIDKey) private var discordApplicationID = ""
+    #endif
     var body: some View {
         @Bindable var model = model
         @Bindable var personal = model.personal
@@ -41,7 +45,13 @@ struct SettingsView: View {
                     Text(model.accountStatus).foregroundStyle(.secondary)
                     if model.auth.deviceCode == nil {
                         if !model.accountSignedIn {
-                            Button("Sign in with Twitch") { Task { await model.login() } }.disabled(model.auth.isSigningIn).accessibilityIdentifier("oauth.signIn")
+                            if model.hasTwitchRegistration {
+                                Button("Sign in with Twitch") { Task { await model.login() } }
+                                    .disabled(model.auth.isSigningIn).accessibilityIdentifier("oauth.signIn")
+                            } else {
+                                NavigationLink("Set Up Twitch Connection") { TwitchRegistrationTutorial() }
+                                    .accessibilityIdentifier("oauth.setup")
+                            }
                         }
                         if !model.isOffline, model.auth.status == "Connected", model.auth.session?.scopes.contains("user:read:chat") == false {
                             Button("Enable Twitch chat") { Task { await model.login(chat: true) } }
@@ -64,18 +74,30 @@ struct SettingsView: View {
                     Label(model.sync.cloud.status, systemImage: "icloud")
                     if let date = model.sync.cloud.lastSyncedAt { Text("Last synced \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                     Button("Sync now") { Task { await model.sync.sync() } }.disabled(model.sync.cloud.isSyncing)
-                    Text("Sources and their access tokens, preferences, searches and watch history sync through your iCloud account. Sign in to Twitch separately on each device. Downloaded files stay on this device.").font(.caption).foregroundStyle(.secondary)
+                    Text("Sources and their access tokens, your Twitch Client ID, preferences, searches and watch history sync through your iCloud account. Sign in to Twitch separately on each device. Downloaded files stay on this device.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Playback") {
                     Picker("Preferred quality", selection: $personal.data.preferences.preferredQuality) {
                         Text("Best").tag("auto")
-                        ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { Text($0).tag($0) }
+                        ForEach(model.playback.qualities.filter { $0 != "auto" }, id: \.self) { Text($0).tag($0) }
                     }
                     Text("Best lets your source select the highest available quality. Additional qualities appear after a stream starts.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Autoplay when opening a channel", isOn: $personal.data.preferences.autoplay)
                     Toggle("Picture in Picture", isOn: $personal.data.preferences.pictureInPicture)
                     Toggle("Retry playback after an interruption", isOn: $personal.data.preferences.retryPlayback)
                 }
+                #if os(macOS)
+                Section("Discord") {
+                    Toggle("Discord Rich Presence", isOn: $discordEnabled)
+                    if discordEnabled {
+                        if DiscordPresence.defaultApplicationID.isEmpty {
+                            TextField("Discord Application ID", text: $discordApplicationID)
+                            Link("Discord Developer Portal", destination: URL(string: "https://discord.com/developers/applications")!)
+                        }
+                        Text("Shares the channel you’re watching and your viewing time through the Discord desktop app. Activity sharing must be enabled in Discord.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                #endif
                 Section("Chat") {
                     Toggle("Show chat", isOn: $personal.data.preferences.showChat)
                     #if os(tvOS)
@@ -116,13 +138,13 @@ struct AdvancedSettingsView: View {
     var body: some View {
         @Bindable var model = model
         Form {
+            Section("Streaming") { NavigationLink("Manage sources") { SourcesView() } }
             Section("Twitch application settings") {
-                TextField("Public Client ID", text: $model.deviceClientID).accessibilityIdentifier("oauth.clientID")
-                Text("Requires Client Type: Public in the Twitch Developer Console. No client secret is needed.").font(.caption).foregroundStyle(.secondary)
+                NavigationLink("Set Up Twitch Connection") { TwitchRegistrationTutorial(editExisting: true) }
                 DisclosureGroup("Legacy browser sign-in") {
                     TextField("Legacy browser Client ID", text: $model.clientID)
                     TextField("Registered redirect URI", text: $model.redirect)
-                    Button("Use legacy browser sign-in") { Task { await model.auth.loginWithBrowser(configuration: model.configuration) } }
+                    Button("Use legacy browser sign-in") { Task { await model.auth.loginWithBrowser(configuration: model.configuration) } }.disabled(model.configuration.clientID.isEmpty)
                     Text("Legacy browser sign-in cannot renew automatically. Use only with a Confidential app registration.").font(.caption).foregroundStyle(.secondary)
                 }
             }.accessibilityIdentifier("oauth.advanced")
@@ -144,14 +166,14 @@ struct SourcesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(model.sources.active.map { "Using \($0.name)" } ?? "Add your first server", systemImage: "server.rack")
+                    Label(model.sources.active.map { "Using \($0.name)" } ?? "Add your first source", systemImage: "server.rack")
                         .font(.title2.bold()).accessibilityIdentifier("sources.current")
-                    Text("Choose your main server. If it becomes unavailable, Twitchy automatically uses another enabled server.")
+                    Text("Sources are tried from top to bottom. Change their order to choose your fallback chain. Configuration and order sync through iCloud.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 if let error { Notice(error) }
                 if model.sources.sources.isEmpty {
-                    Button { adding = true } label: { Label("Add server", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 44) }
+                    Button { adding = true } label: { Label("Add", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 44) }
                         .buttonStyle(.borderedProminent).accessibilityIdentifier("sources.add")
                 }
                 ForEach(model.sources.sources) { source in
@@ -162,15 +184,16 @@ struct SourcesView: View {
                                     .font(.title2).foregroundStyle(source.id == model.sources.activeID ? TwitchyTheme.accent : Color.secondary)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(source.name).font(.headline).foregroundStyle(.primary)
-                                    Text(source.baseURL.host ?? source.baseURL.absoluteString).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(source.playbackKind.title + " · " + (source.baseURL.host ?? "")).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 8)
+                                Text("Priority \(sourcePosition(source.id))").font(.caption).foregroundStyle(.secondary)
                                 if source.id == model.sources.activeID { Text("Primary").font(.caption.bold()).foregroundStyle(TwitchyTheme.accent) }
                             }.frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(!source.enabled).accessibilityIdentifier("sources.select.\(source.name)")
                         HStack(spacing: 8) {
                             Image(systemName: source.enabled ? (model.sources.availability[source.id] == false ? "wifi.slash" : "network") : "pause.circle")
-                            Text(!source.enabled ? "Disabled" : model.sources.isChecking ? "Checking…" : model.sources.availability[source.id].map { $0 ? "Available" : "Unavailable" } ?? "Not checked yet")
+                            Text(!source.enabled ? "Disabled" : source.playbackKind != .twitchyServer ? source.connectionStatus : model.sources.isChecking ? "Checking…" : model.sources.availability[source.id].map { $0 ? "Available" : "Unavailable" } ?? "Not checked yet")
                             if source.id == model.sources.fallbackID { Text("· In use").foregroundStyle(TwitchyTheme.accent) }
                             Spacer()
                         }.font(.caption).foregroundStyle(.secondary)
@@ -178,14 +201,19 @@ struct SourcesView: View {
                             Button { editing = source } label: { Label("Edit", systemImage: "pencil").frame(maxWidth: .infinity, minHeight: 36) }
                                 .accessibilityIdentifier("sources.edit.\(source.name)")
                             Button {
+                                if source.playbackKind == .twitchProxy { editing = source; return }
                                 testing.insert(source.id)
                                 Task { await model.sources.test(source.id); testing.remove(source.id) }
                             } label: { Label(testing.contains(source.id) ? "Checking…" : "Check", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, minHeight: 36) }
                                 .disabled(!source.enabled || testing.contains(source.id)).accessibilityIdentifier("sources.check.\(source.name)")
                         }.buttonStyle(.bordered)
+                        HStack {
+                            Button("Move Up", systemImage: "arrow.up") { perform { try model.sources.move(source.id, by: -1) } }.disabled(model.sources.sources.first?.id == source.id).accessibilityIdentifier("sources.up." + source.name).accessibilityValue("Priority \(sourcePosition(source.id))")
+                            Button("Move Down", systemImage: "arrow.down") { perform { try model.sources.move(source.id, by: 1) } }.disabled(model.sources.sources.last?.id == source.id).accessibilityIdentifier("sources.down." + source.name).accessibilityValue("Priority \(sourcePosition(source.id))")
+                        }.buttonStyle(.bordered)
                         DisclosureGroup("Details") {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text(source.baseURL.absoluteString).font(.caption).textSelection(.enabled)
+                                Text(source.endpointLabel).font(.caption).textSelection(.enabled)
                                 if let version = source.serverVersion { Text("Server \(version)").font(.caption) }
                                 if let caps = source.capabilities {
                                     Text([caps.live ? "Live" : nil, caps.vod ? "Videos" : nil, caps.clips ? "Clips" : nil, caps.downloads ? "Downloads" : nil].compactMap { $0 }.joined(separator: " · ")).font(.caption)
@@ -194,7 +222,7 @@ struct SourcesView: View {
                                 Toggle("Enabled", isOn: Binding(get: { source.enabled }, set: { enabled in
                                     var copy = source; copy.enabled = enabled; perform { try model.sources.upsert(copy) }
                                 }))
-                                Button("Remove server", role: .destructive) { removing = source }.buttonStyle(.borderless)
+                                Button("Remove source", role: .destructive) { removing = source }.buttonStyle(.borderless)
                                     .frame(minHeight: 44)
                             }.padding(.top, 12)
                         }.font(.subheadline).foregroundStyle(.secondary)
@@ -206,17 +234,21 @@ struct SourcesView: View {
         .navigationTitle("Sources")
         .toolbar {
             if !model.sources.sources.isEmpty {
-                ToolbarItem { Button { adding = true } label: { Label("Add server", systemImage: "plus") }.accessibilityIdentifier("sources.add") }
+                ToolbarItem { Button { adding = true } label: { Label("Add", systemImage: "plus") }.accessibilityIdentifier("sources.add") }
             }
         }
         .animation(model.personal.data.preferences.reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.sources.activeID)
         .animation(model.personal.data.preferences.reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.sources.isChecking)
         .task { await model.sources.refreshAvailability() }
-        .sheet(isPresented: $adding) { SourceEditor(source: nil) }.sheet(item: $editing) { SourceEditor(source: $0) }
+        .sheet(isPresented: $adding) { AddSourceView() }.sheet(item: $editing) { source in
+            if source.playbackKind == .twitchyServer { SourceEditor(source: source) }
+            else { PlaybackSourceEditor(kind: source.playbackKind, source: source) }
+        }
         .confirmationDialog("Remove \(removing?.name ?? "server")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-            Button("Remove server", role: .destructive) { if let removing { perform { try model.sources.remove(removing.id) }; self.removing = nil } }
+            Button("Remove source", role: .destructive) { if let removing { perform { try model.sources.remove(removing.id) }; self.removing = nil } }
         }
     }
+    private func sourcePosition(_ id: UUID) -> Int { (model.sources.sources.firstIndex { $0.id == id } ?? 0) + 1 }
     private func perform(_ action: () throws -> Void) { do { try action(); error = nil } catch { self.error = error.localizedDescription } }
 }
 struct SourceEditor: View {
@@ -264,7 +296,7 @@ struct SourceEditor: View {
             #if !os(tvOS)
             .formStyle(.grouped)
             #endif
-            .navigationTitle(source == nil ? "Add server" : "Edit server")
+            .navigationTitle(source == nil ? "Add Twitchy Server" : "Edit Twitchy Server")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

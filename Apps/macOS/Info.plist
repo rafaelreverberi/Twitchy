@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>DiscordApplicationID</key>
+	<string>1568597388636061896</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -16,7 +18,7 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>TwitchyCloudEnabled</key>
-	<true/>
+	<key>TwitchyCloudContainer</key>
+	<string>$(TWITCHY_CLOUD_CONTAINER)</string>
 </dict>
 </plist>

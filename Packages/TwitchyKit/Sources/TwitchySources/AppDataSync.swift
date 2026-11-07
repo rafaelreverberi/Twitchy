@@ -7,6 +7,7 @@ import TwitchyCore
     private let personal: PersonalStore
     private let sources: StreamingSourceManager
     private var sourceSnapshot: [String: Data] = [:]
+    private var orderSnapshot: [UUID] = []
     private var selectedSnapshot: UUID?
     private var cacheApplied = false
     private struct SourceValue: Codable { var source: StreamingSource; var credential: String? }
@@ -53,6 +54,7 @@ import TwitchyCore
         for (id, session) in sessions where oldSessions[id] != session { publish("viewing/\(id)", try? JSONEncoder().encode(session), seed: seed) }
         for id in oldSessions.keys where sessions[id] == nil { publish("viewing/\(id)", nil, seed: seed) }
         if old?.historyClearedAt != new.historyClearedAt { publish("historyClearedAt", try? JSONEncoder().encode(new.historyClearedAt), seed: seed) }
+        if old?.proxyConfiguration != new.proxyConfiguration { publish("proxyConfiguration", try? JSONEncoder().encode(new.proxyConfiguration), seed: seed) }
         if old?.oauthSettings != new.oauthSettings { publish("oauthSettings", try? JSONEncoder().encode(new.oauthSettings), seed: seed) }
         if old?.recentSearches != new.recentSearches { publish("searches", try? JSONEncoder().encode(new.recentSearches), seed: seed) }
     }
@@ -61,7 +63,7 @@ import TwitchyCore
         for var source in sources.sources {
             // Connectivity and capabilities are device-specific; sync only portable configuration.
             source.capabilities = nil; source.serverVersion = nil; source.lastSuccessfulCheck = nil; source.connectionStatus = "Not tested"
-            let value = SourceValue(source: source, credential: try sources.credential(for: source.id))
+            let value = SourceValue(source: source, credential: source.playbackKind == .twitchyServer ? try sources.credential(for: source.id) : nil)
             let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
             let data = try encoder.encode(value), key = "source/\(source.id)"
             snapshot[key] = data
@@ -69,6 +71,9 @@ import TwitchyCore
         }
         for key in sourceSnapshot.keys where snapshot[key] == nil { publish(key, nil, seed: seed) }
         if seed || selectedSnapshot != sources.activeID { publish("activeSource", try JSONEncoder().encode(sources.activeID), seed: seed) }
+        let order = sources.sources.map(\.id)
+        if seed || order != orderSnapshot { publish("sourceOrder", try JSONEncoder().encode(order), seed: seed) }
+        orderSnapshot = order
         sourceSnapshot = snapshot; selectedSnapshot = sources.activeID
     }
     private func receive(_ values: [SyncValue]) throws {
@@ -78,6 +83,7 @@ import TwitchyCore
             if parts.first == "source", parts.count == 2, let id = UUID(uuidString: parts[1]) {
                 let decoded = try value.payload.map { try JSONDecoder().decode(SourceValue.self, from: $0) }
                 if let decoded, decoded.source.id != id { throw ClientError.message("Invalid synced source identifier.") }
+                if decoded?.source.kind == .removedEmbed { continue }
                 try sources.applySynced(source: decoded?.source, id: id, credential: decoded?.credential)
                 // Do not turn incoming changes into fresh local edits.
                 if let decoded {
@@ -86,7 +92,7 @@ import TwitchyCore
                 } else { sourceSnapshot.removeValue(forKey: value.key) }
                 continue
             }
-            if value.key == "activeSource" { continue } // Apply selection after all source records.
+            if value.key == "activeSource" || value.key == "sourceOrder" { continue } // Apply selection after all source records.
             try personal.applySynced { data in
                 switch parts.first {
                 case "preference" where parts.count == 2:
@@ -117,14 +123,30 @@ import TwitchyCore
                         data.history.removeAll { $0.watchedAt <= data.historyClearedAt! }
                         data.watchSessions = (data.watchSessions ?? []).filter { $0.watchedAt > data.historyClearedAt! }
                     }
-                case "oauthSettings": if let payload = value.payload { data.oauthSettings = try JSONDecoder().decode(OAuthAppSettings?.self, from: payload) }
+                case "proxyConfiguration": if let payload = value.payload {
+                    let configuration = try JSONDecoder().decode(StreamingProxyConfiguration?.self, from: payload)
+                    if let configuration, configuration.useCustom { _ = try ProxyEndpoint(configuration: configuration).url(channel: "validation") }
+                    data.proxyConfiguration = configuration
+                }
+                case "oauthSettings":
+                    guard let payload = value.payload else { return }
+                    let settings = try JSONDecoder().decode(OAuthAppSettings?.self, from: payload)
+                    if let settings {
+                        // Old installations can still upload the retired registration.
+                        if let ownRegistration = settings.usingOwnRegistration { data.oauthSettings = ownRegistration }
+                    } else {
+                        data.oauthSettings = nil
+                    }
                 case "searches": if let payload = value.payload { data.recentSearches = try JSONDecoder().decode([String].self, from: payload) }
                 case "onboarding": if let payload = value.payload { data.onboardingComplete = try JSONDecoder().decode(Bool.self, from: payload) }
                 default: break
                 }
             }
         }
-        if let selection = values.first(where: { $0.key == "activeSource" }) ?? cloud.values["activeSource"], let payload = selection.payload {
+        if let order = values.first(where: { $0.key == "sourceOrder" }) ?? cloud.values["sourceOrder"], let payload = order.payload {
+            let ids = try JSONDecoder().decode([UUID].self, from: payload)
+            try sources.applySyncedOrder(ids); orderSnapshot = sources.sources.map(\.id); selectedSnapshot = sources.activeID
+        } else if let selection = values.first(where: { $0.key == "activeSource" }) ?? cloud.values["activeSource"], let payload = selection.payload {
             let id = try JSONDecoder().decode(UUID?.self, from: payload)
             try sources.applySyncedSelection(id); selectedSnapshot = sources.activeID
         }

@@ -3,7 +3,6 @@ on:
   push:
     branches: [main]
     paths:
-      - docs/official-player.html
       - docs/oauth-callback.html
       - docs/pages-index.html
       - .github/workflows/pages.yml
@@ -22,7 +21,6 @@ jobs:
       - name: Prepare the static callback site
         run: |
           mkdir -p _site
-          cp docs/official-player.html _site/official-player.html
           cp docs/oauth-callback.html _site/oauth-callback.html
           cp docs/pages-index.html _site/index.html
       - uses: actions/upload-pages-artifact@v4

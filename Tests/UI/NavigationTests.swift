@@ -51,6 +51,55 @@ final class NavigationTests: XCTestCase {
         selectDestination("Downloads", in: app)
         XCTAssertFalse(app.descendants(matching: .any)["channels.skeleton"].firstMatch.exists)
     }
+    @MainActor func testTwitchSetupRequiresOwnClientID() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-oauth.deviceClientID", ""]
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
+        app.launchEnvironment["TWITCHY_UI_SOURCES_FIXTURE"] = "1"
+        app.launch()
+        let setup = app.buttons["oauth.setup"]
+        XCTAssertTrue(setup.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["oauth.signIn"].exists)
+        activate(setup)
+        activate(app.buttons["oauth.next"])
+        XCTAssertTrue(app.staticTexts["oauth.redirectURL"].waitForExistence(timeout: 5))
+        activate(app.buttons["oauth.next"])
+        let field = app.textFields["oauth.clientID"]
+        #if os(iOS)
+        if !field.isHittable { app.swipeUp() }
+        #endif
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["oauth.saveClientID"].isEnabled)
+        activate(field)
+        field.typeText(ProcessInfo.processInfo.environment["TWITCHY_TEST_CLIENT_ID"] ?? "fixtureclientid1234567890abcde")
+        activate(app.buttons["oauth.saveClientID"])
+        XCTAssertTrue(app.descendants(matching: .any)["oauth.clientIDConfigured"].firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testAddSourceOffersProxyAndServerAndSavesProxy() {
+        let app = XCUIApplication()
+        app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
+        app.launchEnvironment["TWITCHY_UI_SOURCES_FIXTURE"] = "1"
+        app.launch()
+        let sources = app.buttons["Streaming sources"]
+        XCTAssertTrue(sources.waitForExistence(timeout: 10)); activate(sources)
+        activate(app.buttons["sources.add"])
+        for kind in ["twitchProxy", "twitchyServer"] {
+            XCTAssertTrue(app.buttons["sources.add." + kind].waitForExistence(timeout: 5))
+        }
+        XCTAssertFalse(app.buttons["sources.add.officialTwitch"].exists)
+        activate(app.buttons["sources.add.twitchProxy"])
+        let address = app.textFields["sources.proxy.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5)); activate(address); address.typeText("https://proxy.example/prefix")
+        activate(app.buttons["sources.save"])
+        let proxy = app.buttons["sources.select.Twitch Proxy"]
+        #if os(iOS)
+        if !proxy.exists { app.swipeUp() }
+        #endif
+        XCTAssertTrue(proxy.waitForExistence(timeout: 5))
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Ordered mixed playback sources"; capture.lifetime = .keepAlways; add(capture)
+    }
     @MainActor func testSourcesSelectionEditAndCheckAreIndependent() {
         let app = XCUIApplication()
         app.launchEnvironment["TWITCHY_UI_DISCOVERY_FIXTURE"] = "offline"
@@ -139,6 +188,7 @@ final class NavigationTests: XCTestCase {
     #if os(iOS)
     @MainActor func testHomeIsUsableWhileStartupIsLoading() {
         let app = XCUIApplication()
+        app.launchArguments += ["-oauth.deviceClientID", ""]
         app.launchEnvironment["TWITCHY_UI_HOME_FIXTURE"] = "loading"
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["Downloads"].waitForExistence(timeout: 5))
@@ -150,7 +200,7 @@ final class NavigationTests: XCTestCase {
         app.tabBars.buttons["Downloads"].tap()
         XCTAssertTrue(app.navigationBars["Downloads"].exists)
         app.tabBars.buttons["Home"].tap()
-        XCTAssertTrue(app.buttons["Sign in with Twitch"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["Set Up Twitch Connection"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.otherElements["home.skeleton"].exists)
     }
     @MainActor func testOfflineHomeOpensDownloadsDuringStartup() {
@@ -238,7 +288,7 @@ final class NavigationTests: XCTestCase {
         capture("Channel sorting")
         app.navigationBars.buttons.firstMatch.tap()
         app.tabBars.buttons["Downloads"].tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Take a video with you")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Take a video with you")).firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields.count, 0, "Downloads are started from content menus, never a manual ID form")
         capture("Downloads empty state")
     }

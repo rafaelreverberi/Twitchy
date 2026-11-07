@@ -1,0 +1,5 @@
+TWITCHY_BUNDLE_PREFIX = org.example
+TWITCHY_CLOUD_CONTAINER =
+TWITCHY_CODE_SIGN_ENTITLEMENTS =
+
+#include? "Twitchy.local.xcconfig"

@@ -21,7 +21,7 @@ Deployment minimums: iOS/iPadOS/tvOS 17.0, macOS 14.0. Build without distributio
 
 ## 2. Sign in and connect a source
 
-The app begins with onboarding. Choose Sign in with Twitch; confirm access on Twitch and return to the app. The bundled Client ID requires a Public registration; see [Twitch authentication](TWITCH_AUTH.md). Custom application configuration is under Profile → Settings → Advanced. Without login the screens remain navigable, but official Helix browsing needs a user token. Without a source, playback shows an actionable setup state. Chat does not use the source.
+In onboarding, open **Set Up Twitch Connection**, register a Public application and save its Client ID. Then choose **Sign in with Twitch** and confirm access on Twitch. The Client ID syncs through private iCloud on provisioned builds. Authorize Twitch on each device. See [Twitch authentication](TWITCH_AUTH.md). Without login the screens remain navigable, but official Helix browsing needs a user token. Without a source, playback shows an actionable setup state. Chat does not use the source.
 
 For a real streaming source, follow [Sources](SOURCES.md). The optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) provides self-hosted HLS and server-side ad filtering; the app itself does not filter ads. Use the server's [setup guide](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/SETUP.md) for Docker and HTTPS.
 

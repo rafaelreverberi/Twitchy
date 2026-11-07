@@ -23,7 +23,7 @@ The initial interface update preserved source credentials, Twitch authentication
 
 All 49 package tests and all three platform builds passed. Manual macOS testing confirmed the PiP control survives Home → compact Now Playing → stream and successfully starts PiP. A fresh real viewing session appeared as For you · Live now on Home. Pause excludes further duration; the compact row and source playback remain functional. Settings correctly displays the unsigned-build iCloud limitation.
 
-The iCloud adapter, watch-duration tracking and recommendation logic are shared across platforms. Initial Apple-cloud testing was blocked by Personal Team provisioning. After switching to the maintainer's iCloud-capable team and `iCloud.org.example.twitchy`, the signed macOS build succeeded and its embedded provisioning profile contained the expected container. The maintainer subsequently reported successful iCloud sync and launches on their devices. See ICLOUD_SYNC.md for setup and the independent real-device acceptance test.
+The iCloud adapter, watch-duration tracking and recommendation logic are shared across platforms. Initial Apple-cloud testing was blocked by Personal Team provisioning. After switching to the maintainer's iCloud-capable team and its shared CloudKit container, the signed macOS build succeeded and its embedded provisioning profile contained the expected container. The maintainer subsequently reported successful iCloud sync and launches on their devices. See ICLOUD_SYNC.md for setup and the independent real-device acceptance test.
 
 ## Custom desktop controls (2026-10-11)
 

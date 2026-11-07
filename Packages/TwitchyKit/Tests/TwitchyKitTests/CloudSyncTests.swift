@@ -36,7 +36,7 @@ actor FixtureCloud: CloudSyncTransport {
     let source = StreamingSource(name: "Test source", baseURL: URL(string: "https://source.example")!, usesAuthentication: true)
     try sourcesA.upsert(source, credential: "fixture-source-secret")
     personalA.favorite("alice"); personalA.data.preferences.showChat = false
-    personalA.data.oauthSettings = .init(clientID: "public-a", deviceClientID: "public-b", redirect: "https://login.example/callback")
+    personalA.data.oauthSettings = .init(clientID: "public-a", deviceClientID: "public-b", redirect: "https://login.example/callback", deviceClientIDWasEntered: true)
     personalA.recordViewing(WatchSession(login: "alice", seconds: 120))
     await a.sync(); await b.sync()
     #expect(personalB.data.favorites == ["alice"])

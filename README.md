@@ -7,7 +7,6 @@
   <a href="https://www.swift.org/"><img alt="Swift 6.4" src="https://img.shields.io/badge/Swift-6.4-F05138?style=for-the-badge&logo=swift&logoColor=white" /></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-24242D?style=for-the-badge" /></a>
   <a href="CHANGELOG.md"><img alt="Version 0.1.0 development" src="https://img.shields.io/badge/Status-0.1.0%20Development-24242D?style=for-the-badge" /></a>
-  <a href="https://github.com/rafaelreverberi/twitchy-server"><img alt="Optional server-side ad filtering" src="https://img.shields.io/badge/Ad%20filtering-via%20Twitchy%20Server-6821BC?style=for-the-badge" /></a>
 
   <p><strong>A fresh way to explore Twitch, designed specifically for the Apple ecosystem.</strong></p>
 
@@ -27,17 +26,27 @@
 
 **Twitch should feel at home on your Apple devices.**
 
-Twitchy is an open-source, native **SwiftUI** Twitch-compatible client for **iPhone, iPad, Mac, and Apple TV**. It brings channel discovery, real-time chat, native playback controls, watch history, and more into a thoughtfully designed app — instead of a website inside a window.
+Twitchy is an open-source, native **SwiftUI** Twitch-compatible client for **iPhone, iPad, Mac, and Apple TV**. It brings channel discovery, chat, playback controls and watch history into a native interface, with user-configured video sources.
 
-Sign in directly with Twitch to explore channels and discover streams. To **play video**, connect your own compatible streaming source. You're in control of the source you use; Twitchy never bundles a video extractor or a streaming backend.
+Sign in directly with Twitch for discovery and chat. Open **Sources → + → Add Source** to choose **Twitch Proxy** or **Twitchy Server**, then set their fallback order. Twitchy does not bundle a public proxy, video extractor or streaming backend.
 
-**Looking for Twitch adblock on Apple devices?** Pair the app with **[Twitchy Server](https://github.com/rafaelreverberi/twitchy-server)**, the optional self-hosted streaming source. It can filter *recognized, marked ads* before video reaches the player. **The Twitchy app itself does not block ads**; filtering happens entirely in the separate server and is not guaranteed for every ad or stream. [See how it works ↓](#twitchy-server)
+**Project position:** Twitchy is an independent, source-configurable client, not an ad blocker. Proxies are entered and selected by users; Twitchy does not operate or endorse third-party ad-blocking services, promise ad-free playback, or establish permission to access or redistribute content. Only use services and content you are permitted to use.
 
 > [!IMPORTANT]
 > **Early development preview · v0.1.0**
-> Twitchy is currently distributed as **source code for self-building**, not as a downloadable app or App Store release. Features described as implemented have code and local verification, but **real Twitch account consent and end-to-end production streaming have not yet been verified**. See [verification](docs/VERIFICATION.md) and [known limitations](docs/LIMITATIONS.md).
+> Twitchy is currently distributed as **source code for self-building**, not as a downloadable app or App Store release. Live proxy playback has bounded local verification; real Twitch account consent, physical-device behavior and multi-device CloudKit transport remain unverified. See [verification](docs/VERIFICATION.md) and [known limitations](docs/LIMITATIONS.md).
 
 <a id="why-twitchy"></a>
+
+## Sources and fallback order
+
+Add sources through **Sources → + → Add Source**. Mix and reorder them, for example **Twitchy Server 1 → Twitchy Server 2 → your proxy**. Enabled providers are tried in that order. Their type, configuration, enablement and order synchronize through private iCloud records in provisioned builds.
+
+Twitchy Server and HLS proxy playback use AVPlayer. New downloads require a capable, connected Twitchy Server; saved local files remain playable offline.
+
+No public proxy is bundled or selected automatically. Proxy diagnostics and setup are in [sources](docs/SOURCES.md), [playback architecture](docs/PROXY_FALLBACK.md) and [dated research](docs/PROXY_RESEARCH.md). These are operational observations, not endorsements or service guarantees.
+
+On macOS, **Settings → Discord** can share the current channel and elapsed viewing time with the Discord desktop app. It is off by default. The Twitchy Discord application is preconfigured.
 
 ## 💜 Why Twitchy?
 
@@ -47,23 +56,13 @@ Sign in directly with Twitch to explore channels and discover streams. To **play
 | **💬 Chat where you watch** <br /> Twitch EventSub chat with message receiving, reconnection, and sending; additional emote polish is in progress. | **🕘 Pick up where you left off** <br /> Local watch history, VOD resume positions, recent searches, and viewing-based live recommendations. |
 | **📥 Take authorized content offline** <br /> Download jobs with progress, cancellation, retry, and local MP4 playback on iPhone, iPad, and Mac. | **☁️ Bring your settings along** <br /> Optional, privately stored CloudKit sync for sources, credentials, preferences, searches, and history, with your own provisioning. |
 | **🔐 No built-in telemetry** <br /> Device-only Keychain storage for Twitch authentication and no bundled client secret. | **🧩 Open by design** <br /> MIT-licensed code, modular Swift packages, and an explicitly documented streaming-source contract. |
-| **🛡️ Optional server-side ad filtering** <br /> [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) filters recognized, marked ads upstream and pauses output during ad breaks. **The app does not block ads.** | **🖥️ Run your own streaming source** <br /> Self-host Twitchy Server with Docker, or connect another source implementing the documented v1 API. |
+| **🔀 Your source order** <br /> Combine servers and permitted custom HLS proxies in a fallback order you control. | **🖥️ Run your own streaming source** <br /> Self-host Twitchy Server with Docker, or connect another source implementing the documented v1 API. |
 
 <a id="twitchy-server"></a>
 
-## 🛡️ Twitchy Server — optional server-side ad filtering
+## Twitchy Server — optional self-hosted source
 
-**Twitchy is the player. [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) is the optional, self-hosted streaming backend.** The two projects work together but have different responsibilities:
-
-| | **Twitchy app** | **Twitchy Server** |
-| :--- | :--- | :--- |
-| **Purpose** | Native Apple interface, Twitch sign-in, channel discovery, chat, and AVPlayer playback. | Independent HLS video source for live streams, VODs, and clips. |
-| **Ad filtering** | **None.** No ad blocker is included in the client. | **Server-side filtering of recognized, marked Twitch ad segments** when enabled. |
-| **During an ad break** | Plays or buffers the HLS stream supplied by the chosen source. | Filters recognized ad media before delivery; its default filter/pause mode **pauses video output** until normal content returns. |
-| **Installation** | Build the Apple app using Xcode. | Run an **optional, separate** Docker-based server on a computer, NAS, or authorized VPS you control. |
-
-> [!IMPORTANT]
-> **Filtering is not a guarantee of an ad-free or uninterrupted stream.** Twitchy Server's default mode filters ads identified by supported markers. Unmarked or unrecognized ads may still pass through, and video can buffer while a marked ad break is filtered. Filtering is **not performed by Twitchy itself**. Review the server's [ad-handling documentation](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/ADBLOCK.md), [verification limits](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/VERIFICATION.md), and applicable Twitch policies before using or distributing it.
+[Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) is a separate, optional Source API v1 backend. It can provide live/VOD/clip HLS and supported authorized downloads. Configure its independent credentials under **Add Source → Twitchy Server**. Backend behavior and permissions remain the operator’s responsibility; the app does not implement or guarantee ad removal. Other compatible servers can be used.
 
 ### Connect Twitchy Server
 
@@ -116,11 +115,11 @@ Choose **`Twitchy-macOS`**, **`Twitchy-iOS`** (iPhone/iPad), or **`Twitchy-tvOS`
 
 **3. Sign in with Twitch**
 
-Use **Sign in with Twitch** in the app. The default public-device flow uses a bundled **public Client ID** and supports token renewal; no client secret is embedded. Custom OAuth settings are available under **Settings → Advanced**. Real consent remains to be validated against a registered Twitch application.
+Open **Set Up Twitch Connection** and follow the tutorial to register a Public application in the Twitch Developer Console. Save its Client ID in Twitchy and authorize the app on Twitch. Your Client ID syncs through private iCloud on a provisioned build. Authorize Twitch separately on each device. See [Twitch authentication](docs/TWITCH_AUTH.md).
 
 **4. Add your streaming source (for video)**
 
-Open **Profile → Settings → Sources**, add a source that implements the [Twitchy Source API v1](docs/SERVER_API.md), test its capabilities, and select it. If you want **optional server-side ad filtering**, you can run **[Twitchy Server](https://github.com/rafaelreverberi/twitchy-server)** and add it here; the **app does not filter ads**. You can browse and use chat without a streaming source, but **Twitch authorization is still required for Helix-based discovery**.
+Open **Profile → Settings → Sources → Add → Twitchy Server**, add a source that implements the [Twitchy Source API v1](docs/SERVER_API.md), test its capabilities, and select it. Alternatively, configure a permitted custom Twitch Proxy. The app does not filter or skip ads. You can browse and use chat without a streaming source, but **Twitch authorization is still required for Helix-based discovery**.
 
 **Documentation hub:** [All guides](docs/README.md)
 
@@ -130,28 +129,18 @@ Open **Profile → Settings → Sources**, add a source that implements the [Twi
 
 ## 🔌 How streaming works
 
-One intentional separation makes Twitchy different:
-
-- **Your Twitch connection:** Authentication, channel / stream information, search, and chat use official Twitch **OAuth**, **Helix**, and **EventSub** interfaces.
-- **Your video connection:** Playback is supplied **only** by a user-configured, compatible source implementing the [versioned v1 contract](docs/SERVER_API.md). Twitchy consumes its HLS output through AVPlayer.
-- **Optional server-side filtering:** [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) is a separate, self-hosted source. When enabled, it uses Streamlink to filter *recognized, marked* ad segments and FFmpeg to serve its own HLS output, potentially pausing the video during ad breaks. The **client performs no ad filtering**.
-- **Your credentials:** The `SourceClient` dependency boundary prevents it from accessing Twitch credentials. Server access uses an independent source credential; no unofficial extraction fallback, production streaming backend, or bundled client secret is included in the app repository.
+Discovery and chat use official Twitch OAuth, Helix and EventSub interfaces. Video follows your ordered, enabled Sources list. Twitchy Servers use the [v1 contract](docs/SERVER_API.md), and custom playlist proxies provide HLS to AVPlayer.
 
 ```mermaid
 flowchart LR
-    U([You]) --> T[Twitchy · SwiftUI]
-    T -->|Sign-in & metadata| H[Twitch OAuth / Helix]
-    T <-->|Chat| E[Twitch EventSub]
-    T -->|v1 source API| S[User-configured source]
-    S -->|Signed HLS media| P[AVPlayer in Twitchy]
-    X[Optional Twitchy Server: ad filtering] -.->|Can be your source| S
-    style T fill:#873BFB,color:#ffffff,stroke:#A974FF
-    style S fill:#1E1730,color:#ffffff,stroke:#873BFB
-    style X fill:#24113C,color:#ffffff,stroke:#A974FF
+    T[Twitchy] -->|Metadata and chat| H[Twitch APIs]
+    T -->|Ordered sources| S[Twitchy Servers]
+    T -->|Ordered sources| X[User-configured HLS proxies]
+    S --> P[AVPlayer]
+    X --> P
 ```
 
-> [!NOTE]
-> Twitchy **the app** does **not** acquire streams, remove ads, or bypass Twitch restrictions. **Optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) handles stream acquisition and recognized-ad filtering separately**. Filtering is limited and may cause buffering; it cannot guarantee an ad-free experience. Source operators remain responsible for applicable Twitch policies and content rights.
+Server credentials stay with their own source. Proxies receive no native Twitch or server credentials. Twitchy provides no ad skipping, proxy network or guarantee of uninterrupted playback.
 
 ## 🛠️ What's built — and what's next
 
@@ -159,8 +148,7 @@ flowchart LR
 | --- | --- |
 | Native UI on iOS, iPadOS, macOS, and tvOS | **Implemented**; device-specific layouts, with development verification. |
 | OAuth, token storage / refresh, official Twitch browsing | **Implemented**; real account authorization still needs validation. |
-| Streaming sources and AVPlayer / HLS playback | **Implemented**; verified with generated local HLS fixtures, not real production streams. |
-| Server-side ad filtering | **Available in the separate, optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server)**; not implemented in the app. Filters recognized marked ads in server tests, not a guarantee of real-world ad-free playback. |
+| Ordered server and proxy sources | **Implemented**; deterministic fallback tests, bounded live AVPlayer checks. See [research](docs/PROXY_RESEARCH.md). |
 | EventSub chat and sending messages | **Implemented**; decoding and policy checks tested, live integration pending. |
 | Authorized MP4 downloads | **Implemented** for foreground transfers; pause / resume and background transfers planned. |
 | History, VOD resume, local recommendations | **Implemented**; recommendations use local viewing activity and Helix live status. |
@@ -168,7 +156,7 @@ flowchart LR
 | Advanced emotes, tablet / Mac window refinements | **Partially implemented / planned**. |
 | Global free-text clips / VOD search, follow mutation | **Not supported** through the current official API design. |
 
-Source health checks and automatic fallback between enabled servers are implemented; see [source setup](docs/SOURCES.md). iPhone Companion Mode also has an implementation for Apple TV chat, with cross-device verification still pending.
+Source health checks and automatic fallback between enabled providers are implemented; see [source setup](docs/SOURCES.md). iPhone Companion Mode also has an implementation for Apple TV chat, with cross-device verification still pending.
 
 See the [full roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md), and [detailed limitations](docs/LIMITATIONS.md) before relying on a specific feature.
 
@@ -206,7 +194,7 @@ These are development commands, **not a claim that remote CI or a real Twitch si
 | --- | --- |
 | [Architecture](docs/ARCHITECTURE.md) | Modules, layering, and dependencies. |
 | [Source API](docs/SERVER_API.md) / [OpenAPI](docs/SERVER_API.json) | Versioned external playback-source contract. |
-| [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) / [Ad handling](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/ADBLOCK.md) | Optional self-hosted backend, filtering behavior, and its limitations. |
+| [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) | Optional self-hosted video source. |
 | [Authentication](docs/TWITCH_AUTH.md) | Twitch OAuth and device flow. |
 | [Chat](docs/CHAT.md) | EventSub integration and policy boundaries. |
 | [macOS interface](docs/MACOS_INTERFACE.md) / [tvOS interface](docs/TVOS_INTERFACE.md) | Platform-specific UI and verification. |
@@ -225,14 +213,14 @@ Not currently. This is a **0.1.0 development source release** for people who wan
 <details>
 <summary><strong>Can I watch streams right after signing in?</strong></summary>
 
-Channel discovery and chat use official Twitch APIs. **Video is different:** you need to add a compatible, user-configured streaming source before HLS playback can work. You can use [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server) or another compatible source. See [Sources](docs/SOURCES.md).
+Channel discovery and chat use official Twitch APIs. Add a video provider through **Sources → +**: a permitted HLS proxy or a Twitchy Server. See [Sources](docs/SOURCES.md).
 
 </details>
 
 <details>
-<summary><strong>Does Twitchy block ads? How does Twitchy Server help?</strong></summary>
+<summary><strong>Does Twitchy block ads?</strong></summary>
 
-**The Twitchy app does not block ads or extract streams.** Ad filtering is available **only if you choose to run a compatible server that implements it**, such as **[Twitchy Server](https://github.com/rafaelreverberi/twitchy-server)**. That separate project uses server-side filtering for recognizable, marked Twitch ad segments; the default behavior pauses output during those breaks. Unknown or unmarked ads may not be filtered. This is **not a promise of always ad-free or uninterrupted playback**. See [server ad handling](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/ADBLOCK.md).
+Twitchy is a configurable client and does not block or skip ads. Third-party providers are selected by users; their behavior is controlled by their operators. Twitchy does not operate or endorse ad-blocking proxy services or promise an ad-free experience.
 
 </details>
 

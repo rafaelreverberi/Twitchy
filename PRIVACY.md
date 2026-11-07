@@ -19,3 +19,13 @@ The default browser OAuth return page is hosted on GitHub Pages. GitHub receives
 ## Self-built copies and source operators
 
 The public GitHub repository contains application code and setup identifiers, not users' Keychain entries, CloudKit records or local history. For independently provisioned builds, use your own Apple team and CloudKit container; see [self-build setup](docs/SELF_BUILD.md). The original maintainer does not operate the user-configured streaming source. A source operator can observe playback/download requests and must provide its own applicable privacy information. A developer who distributes a modified app or operates a backend must assess their own data-processing responsibilities.
+
+## Streaming sources
+
+Sources contains user-selected Twitchy Servers and custom HLS proxies. No public proxy is bundled. Names, type, endpoint/template, enablement and fallback order are stored locally and synchronized through encrypted private CloudKit records. Only server entries can have source credentials; these remain in their dedicated Keychain and encrypted sync path. Playback results, signed media URLs and proxy test state are not synced.
+
+A configured proxy receives the viewer’s IP address, requested channel and ordinary network metadata. Its playlist/segment hosts receive playback requests. Proxy resolution never receives Twitch OAuth or server credentials. Do not put secrets into proxy templates. No proxy authentication is supported.
+
+## Discord Rich Presence on macOS
+
+If you enable Discord Rich Presence, Twitchy shares the current channel name and elapsed viewing time with the local Discord desktop app. Discord controls who can see the activity. The optional setting and Application ID stay on the Mac. Saved offline playback is excluded.

@@ -75,8 +75,8 @@ struct ChannelDetail: View {
             #endif
         }
         #if os(tvOS)
-        .task(id: model.playback.session?.sessionId) {
-            while model.playback.session != nil && !Task.isCancelled {
+        .task(id: model.playback.playbackID) {
+            while model.playback.hasMedia && !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); savePosition() } catch { return }
             }
         }
@@ -92,7 +92,7 @@ struct ChannelDetail: View {
         }
         #if os(tvOS)
         .onChange(of: model.playback.state) { _, state in
-            if state == .failed, model.personal.data.preferences.retryPlayback, attempt < 2 { attempt += 1; Task { try? await Task.sleep(for: .seconds(2 * attempt)); guard !Task.isCancelled else { return }; await model.playback.retry() } }
+            if !model.playback.managesRecovery, state == .failed, model.playback.failureIsRetryable, model.personal.data.preferences.retryPlayback, attempt < 2 { attempt += 1; Task { try? await Task.sleep(for: .seconds(2 * attempt)); guard !Task.isCancelled else { return }; await model.playback.retry(automatic: true) } }
         }
         #endif
         #if !os(iOS)
@@ -120,15 +120,15 @@ struct ChannelDetail: View {
                         }
                     }
                     HStack { VStack(alignment: .leading) { Text(selection.name).font(.title.bold()); Text(stream?.title ?? "Channel details").foregroundStyle(.secondary); if let stream { Text("\(stream.gameName) · \(stream.viewerCount.formatted()) viewers").font(.caption) } } }
-                    HStack { Button("Watch live") { Task { await model.play(selection) } }.buttonStyle(.borderedProminent); Button("Fullscreen") { fullscreen = true }.disabled(model.playback.session == nil) }
+                    HStack { Button("Watch live") { Task { await model.play(selection) } }.buttonStyle(.borderedProminent); Button("Fullscreen") { fullscreen = true }.disabled(!model.playback.hasMedia) }
                     if let downloadNotice { Text(downloadNotice).foregroundStyle(.secondary) }
                     if let error { Notice(error) }
                     if let error = model.error { Notice(error) }
-                    if let session = model.playback.session {
+                    if model.playback.hasMedia {
                         HStack {
                             Menu("Quality: " + model.playback.qualityLabel) {
                                 Button("Best") { Task { await model.playback.changeQuality("auto") } }
-                                ForEach(session.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
+                                ForEach(model.playback.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { Task { await model.playback.changeQuality(quality) } } }
                             }
                             Button(model.playback.isMuted ? "Unmute" : "Mute") { model.playback.toggleMute() }
                             Text(model.playback.state.rawValue).font(.caption).foregroundStyle(.secondary)
@@ -169,9 +169,10 @@ struct ChannelDetail: View {
     }
     @ViewBuilder private func downloadButton(type: String, id: String, title: String? = nil, thumbnail: String? = nil, duration: String? = nil) -> some View {
         #if !os(tvOS)
-        if model.sources.active?.capabilities?.clientSideDownloads == true {
+        if !model.canDownload { Text("Downloads require a Twitchy Server").font(.caption).foregroundStyle(.secondary) }
+        if model.canDownload {
             Button("Download") { Task {
-                do { let client = try model.sources.client(); await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title ?? selection.name, channel: selection.name, thumbnailURL: thumbnail.flatMap { URL(string: $0.replacingOccurrences(of: "%{width}", with: "320").replacingOccurrences(of: "%{height}", with: "180")) }, duration: duration)); downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback." }
+                do { let client = try model.sources.client(for: model.downloadSource); await model.downloads.enqueue(client: client, type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title ?? selection.name, channel: selection.name, thumbnailURL: thumbnail.flatMap { URL(string: $0.replacingOccurrences(of: "%{width}", with: "320").replacingOccurrences(of: "%{height}", with: "180")) }, duration: duration)); downloadNotice = model.downloads.error ?? "Download added. See Downloads for progress and offline playback." }
                 catch { downloadNotice = error.localizedDescription }
             } }
         }
@@ -199,11 +200,11 @@ struct ChannelDetail: View {
     private var playerArea: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12).fill(.black)
-            if model.playback.session != nil { nativePlayer }
-            else { VStack(spacing: 12) { Image(systemName: "play.rectangle").font(.largeTitle).foregroundStyle(TwitchyTheme.accent); Text(model.playback.state == .loading ? "Starting stream…" : model.sources.active == nil ? "A streaming source is required" : "Ready when you are").font(.headline); Text(model.sources.active?.name ?? "Configure a source in Profile → Settings").font(.caption).foregroundStyle(.secondary) } }
+            if model.playback.hasMedia { nativePlayer }
+            else { VStack(spacing: 12) { Image(systemName: "play.rectangle").font(.largeTitle).foregroundStyle(TwitchyTheme.accent); Text(model.playback.state == .loading ? "Starting stream…" : model.sources.active == nil ? "Choose a source or enable a proxy" : "Ready when you are").font(.headline); Text(model.sources.active?.name ?? "Configure a source in Profile → Settings").font(.caption).foregroundStyle(.secondary) } }
             if model.playback.state == .loading || model.playback.state == .buffering { ProgressView().padding().background(.black.opacity(0.7), in: Capsule()) }
             if model.playback.state == .adBreak || model.playback.state == .pausedByServer { Text("Playback paused by your source").padding().background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 10)) }
-            if let error = model.playback.error { VStack { Notice(error); Button("Retry playback") { attempt = 0; Task { await model.playback.retry() } } }.padding(20) }
+            if let error = model.playback.error { VStack { Notice(error); Button("Retry playback") { attempt = 0; Task { await model.playback.retry() } }; NavigationLink("Sources") { ProxySettingsView() } }.padding(20) }
         }.foregroundStyle(.white).aspectRatio(16 / 9, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
@@ -490,15 +491,12 @@ extension ChannelDetail {
     private var desktopPlayer: some View {
         VStack(spacing: 0) {
             playerArea
-            if model.playback.session == nil && model.playback.state != .loading {
+            if !model.playback.hasMedia && model.playback.state != .loading {
                 HStack {
-                    Text(model.sources.active == nil ? "Connect a source to watch this stream." : "Start playback when you're ready.").font(.callout).foregroundStyle(.secondary)
+                    Text("Start playback or check your source and proxy settings.").font(.callout).foregroundStyle(.secondary)
                     Spacer()
-                    if model.sources.active == nil {
-                        Button("Configure source") { model.showingSettings = true }.buttonStyle(.borderedProminent)
-                    } else {
-                        Button("Retry") { startWatching(type: model.playback.currentRequest?.contentType ?? selection.contentType ?? "live", id: model.playback.currentRequest?.contentId ?? selection.contentID, title: playingTitle) }.buttonStyle(.borderedProminent)
-                    }
+                    Button("Retry") { startWatching(type: model.playback.currentRequest?.contentType ?? selection.contentType ?? "live", id: model.playback.currentRequest?.contentId ?? selection.contentID, title: playingTitle) }.buttonStyle(.borderedProminent)
+                    NavigationLink("Sources") { ProxySettingsView() }
                 }.padding(.top, 14)
             }
         }
@@ -574,7 +572,7 @@ extension ChannelDetail {
     }
     private func startWatching(type: String = "live", id: String? = nil, title: String? = nil) {
         savePosition(); watching = true; playingTitle = title; attempt = 0; model.error = nil
-        if let active = model.nowPlaying, model.playback.session != nil, active.selection.login == selection.login, active.selection.contentType == type, active.selection.contentID == id {
+        if let active = model.nowPlaying, model.playback.hasMedia, active.selection.login == selection.login, active.selection.contentType == type, active.selection.contentID == id {
             playingTitle = active.title
         } else {
             model.startDesktopPlayback(selection, type: type, contentID: id, title: title ?? stream?.title, thumbnail: stream?.thumbnail)

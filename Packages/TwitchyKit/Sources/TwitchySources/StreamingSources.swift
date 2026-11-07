@@ -37,6 +37,8 @@ public struct Capabilities: Codable, Sendable, Equatable {
 public struct Health: Codable, Sendable { public var status: String; public var serverVersion: String; public var apiVersion: String }
 public struct StreamingSource: Codable, Identifiable, Sendable, Equatable {
     public var id: UUID; public var name: String; public var baseURL: URL; public var enabled: Bool; public var allowLocalHTTP: Bool
+    public var kind: PlaybackSourceKind? = nil
+    public var proxyConfiguration: StreamingProxyConfiguration? = nil
     public var usesAuthentication: Bool; public var serverVersion: String?; public var capabilities: Capabilities?; public var lastSuccessfulCheck: Date?; public var connectionStatus: String
     public init(id: UUID = UUID(), name: String, baseURL: URL, allowLocalHTTP: Bool = false, usesAuthentication: Bool = false) { self.id = id; self.name = name; self.baseURL = baseURL; enabled = true; self.allowLocalHTTP = allowLocalHTTP; self.usesAuthentication = usesAuthentication; connectionStatus = "Not tested" }
 }
@@ -46,6 +48,9 @@ public struct PlaybackRequest: Codable, Sendable {
     public struct Preferences: Codable, Sendable { public var lowLatency: Bool; public init(lowLatency: Bool = true) { self.lowLatency = lowLatency } }
 }
 public struct PlaybackSession: Codable, Sendable {
+    // Runtime recovery context is deliberately outside the Source API wire model.
+    public var priorFailedSourceIDs: Set<UUID>? = nil
+    private enum CodingKeys: String, CodingKey { case sessionId, hlsUrl, qualities, expiresAt, title, playerCapabilities, filteringStatus, state, selectedQuality }
     public var sessionId: String; public var hlsUrl: URL; public var qualities: [String]; public var expiresAt: Date?; public var title: String?; public var playerCapabilities: [String]?; public var filteringStatus: String?; public var state: String?; public var selectedQuality: String?
     public func qualityLabel(requested: String) -> String {
         guard requested == "auto" else { return requested }
@@ -65,6 +70,7 @@ public struct StreamingSourceClient: Sendable {
     private let authentication: SourceAuthentication
     private let http: HTTPClient
     public init(source: StreamingSource, authentication: SourceAuthentication = .none, transport: any HTTPTransport = NetworkTransport(requestTimeout: 110, resourceTimeout: 120)) throws {
+        guard source.playbackKind == .twitchyServer else { throw ClientError.unsupported }
         _ = try SourceURL.validate(source.baseURL.absoluteString, allowLocalHTTP: source.allowLocalHTTP)
         self.source = source; self.authentication = authentication; http = HTTPClient(transport: transport)
     }
@@ -89,7 +95,11 @@ public struct StreamingSourceClient: Sendable {
     public func probe() async throws -> Health {
         var r = try request("health"); r.timeoutInterval = 3
         let result = try await http.transport.send(r)
-        guard 200..<300 ~= result.status else { throw ClientError.server(result.status) }
+        guard 200..<300 ~= result.status else {
+            if result.status == 401 { throw ClientError.unauthorized }
+            if result.status == 403 { throw ClientError.missingScope }
+            throw ClientError.server(result.status)
+        }
         let health = try JSONCoding.decoder().decode(Health.self, from: result.data)
         guard health.status == "ok", health.apiVersion == "v1" else { throw ClientError.incompatibleAPI }
         return health
@@ -130,12 +140,18 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     @ObservationIgnored public var onChange: (() -> Void)?
     @ObservationIgnored private var applyingRemote = false
     private let url: URL; private let secrets: any SecretStore
-    private struct Saved: Codable { var sources: [StreamingSource]; var activeID: UUID? }
+    private struct Saved: Codable { var sources: [StreamingSource]; var activeID: UUID?; var ordered: Bool? = nil }
     public init(url: URL = TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: any SecretStore = KeychainStore(service: "com.rafaelreverberi.Twitchy.sources"), probeTransport: any HTTPTransport = NetworkTransport(requestTimeout: 3, resourceTimeout: 4), playbackTransport: any HTTPTransport = NetworkTransport(requestTimeout: 110, resourceTimeout: 120)) {
         self.url = url; self.secrets = secrets; self.probeTransport = probeTransport; self.playbackTransport = playbackTransport
-        do { if FileManager.default.fileExists(atPath: url.path) { let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: url)); sources = saved.sources; activeID = saved.activeID } } catch { self.error = "Saved sources could not be read." }
+        do { if FileManager.default.fileExists(atPath: url.path) { let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: url)); sources = saved.sources.filter { $0.kind != .removedEmbed }; activeID = saved.activeID
+                if let id = activeID, saved.sources.contains(where: { $0.id == id && $0.kind == .removedEmbed }) { activeID = sources.first(where: \.enabled)?.id }
+                if saved.ordered != true, let id = activeID, let index = sources.firstIndex(where: { $0.id == id }) { sources.insert(sources.remove(at: index), at: 0) }
+            } } catch { self.error = "Saved sources could not be read." }
     }
     /// activeID is the user's preferred server and remains the synced selection.
+    public var playbackRevision: UUID { configurationRevision }
+    public func notePlaybackCapabilities(_ id: UUID, capabilities: Capabilities) { if let index = sources.firstIndex(where: { $0.id == id }) { sources[index].capabilities = capabilities; availability[id] = true } }
+    public func notePlaybackSource(_ id: UUID) { fallbackID = id == activeID ? nil : id }
     public var selected: StreamingSource? { sources.first { $0.id == activeID && $0.enabled } }
     public var active: StreamingSource? { sources.first { $0.id == (fallbackID ?? activeID) && $0.enabled } ?? selected }
     private func invalidateProbes() {
@@ -145,7 +161,7 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
     public func refreshAvailability(force: Bool = false) async {
         if let probeTask { await probeTask.value; return }
         if !force, let lastProbeAt, Date.now.timeIntervalSince(lastProbeAt) < 30 { return }
-        let snapshot = sources.filter(\.enabled), revision = configurationRevision
+        let snapshot = sources.filter { $0.enabled && $0.playbackKind == .twitchyServer }, revision = configurationRevision
         let clients = snapshot.map { source in (source, try? client(for: source, transport: probeTransport)) }
         isChecking = true
         let task = Task { [weak self] in
@@ -180,10 +196,10 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
         await refreshAvailability(force: failedSourceID != nil)
         try Task.checkCancellation()
         guard configurationRevision == revision else { throw CancellationError() }
-        guard sources.contains(where: \.enabled) else { throw ClientError.noSource }
+        guard sources.contains(where: { $0.enabled && $0.playbackKind == .twitchyServer }) else { throw ClientError.noSource }
         let ordered = [selected].compactMap { $0 } + sources.filter { $0.id != activeID }
         let candidates = ordered.filter { source in
-            guard source.enabled, source.id != failedSourceID, availability[source.id] == true else { return false }
+            guard source.playbackKind == .twitchyServer, source.enabled, source.id != failedSourceID, availability[source.id] == true else { return false }
             guard let caps = source.capabilities else { return true }
             return caps.playbackProtocols.contains("hls") && (request.contentType == "live" ? caps.live : request.contentType == "vod" ? caps.vod : caps.clips)
         }
@@ -198,28 +214,44 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
         throw URLError(.cannotConnectToHost)
     }
     public func upsert(_ source: StreamingSource, credential: String? = nil) throws {
-        _ = try SourceURL.validate(source.baseURL.absoluteString, allowLocalHTTP: source.allowLocalHTTP)
+        switch source.playbackKind {
+        case .twitchyServer: _ = try SourceURL.validate(source.baseURL.absoluteString, allowLocalHTTP: source.allowLocalHTTP)
+        case .twitchProxy:
+            guard let configuration = source.proxyConfiguration, !source.usesAuthentication else { throw ProxyError.invalidConfiguration }
+            _ = try ProxyEndpoint(configuration: configuration).url(channel: "validation")
+        case .removedEmbed:
+            throw ClientError.unsupported
+        }
         if source.usesAuthentication, let old = sources.first(where: { $0.id == source.id }), old.baseURL != source.baseURL, credential?.isEmpty != false { throw ClientError.message("Enter a new source credential when changing an authenticated source URL.") }
         let old = sources.first { $0.id == source.id }
-        let configurationChanged = old?.name != source.name || old?.baseURL != source.baseURL || old?.enabled != source.enabled || old?.allowLocalHTTP != source.allowLocalHTTP || old?.usesAuthentication != source.usesAuthentication || credential != nil
-        if let credential { if credential.isEmpty { try secrets.delete(source.id.uuidString) } else { try secrets.write(Data(credential.utf8), key: source.id.uuidString) } }
+        let configurationChanged = old?.kind != source.kind || old?.proxyConfiguration != source.proxyConfiguration || old?.name != source.name || old?.baseURL != source.baseURL || old?.enabled != source.enabled || old?.allowLocalHTTP != source.allowLocalHTTP || old?.usesAuthentication != source.usesAuthentication || credential != nil
+        if source.playbackKind != .twitchyServer, old?.playbackKind == .twitchyServer { try secrets.delete(source.id.uuidString) }
+        if source.playbackKind == .twitchyServer, let credential { if credential.isEmpty { try secrets.delete(source.id.uuidString) } else { try secrets.write(Data(credential.utf8), key: source.id.uuidString) } }
         if let index = sources.firstIndex(where: { $0.id == source.id }) { sources[index] = source } else { sources.append(source) }
         if configurationChanged { invalidateProbes(); availability[source.id] = nil }
         if activeID == nil || selected == nil { activeID = sources.first(where: \.enabled)?.id }
         if configurationChanged, fallbackID == source.id { fallbackID = nil }
         try persist()
     }
-    public func select(_ id: UUID) throws { guard sources.contains(where: { $0.id == id && $0.enabled }) else { throw ClientError.noSource }; activeID = id; fallbackID = nil; invalidateProbes(); try persist() }
-    public func remove(_ id: UUID) throws { try secrets.delete(id.uuidString); invalidateProbes(); availability[id] = nil; if fallbackID == id { fallbackID = nil }; sources.removeAll { $0.id == id }; if activeID == id { activeID = sources.first(where: \.enabled)?.id }; try persist() }
+    public func select(_ id: UUID) throws { guard let index = sources.firstIndex(where: { $0.id == id && $0.enabled }) else { throw ClientError.noSource }; sources.insert(sources.remove(at: index), at: 0); activeID = id; fallbackID = nil; invalidateProbes(); try persist() }
+    public func remove(_ id: UUID) throws { if sources.first(where: { $0.id == id })?.playbackKind != .twitchProxy { try secrets.delete(id.uuidString) }; invalidateProbes(); availability[id] = nil; if fallbackID == id { fallbackID = nil }; sources.removeAll { $0.id == id }; if activeID == id { activeID = sources.first(where: \.enabled)?.id }; try persist() }
     public func client(for source: StreamingSource? = nil, transport: (any HTTPTransport)? = nil) throws -> StreamingSourceClient {
         guard let source = source ?? active else { throw ClientError.noSource }
-        let secret = try secrets.read(source.id.uuidString).flatMap { String(data: $0, encoding: .utf8) }
+        guard source.playbackKind == .twitchyServer else { throw ClientError.message("Downloads and server actions require a Twitchy Server source.") }
+        let secret = source.usesAuthentication ? try secrets.read(source.id.uuidString).flatMap { String(data: $0, encoding: .utf8) } : nil
         guard !source.usesAuthentication || secret?.isEmpty == false else { throw ClientError.unauthorized }
         return try StreamingSourceClient(source: source, authentication: source.usesAuthentication ? .bearer(secret!) : .none, transport: transport ?? playbackTransport)
     }
-    public func test(_ id: UUID) async {
+    public func test(_ id: UUID, channel: String? = nil) async {
         guard let source = sources.first(where: { $0.id == id }) else { return }
         do {
+            if source.playbackKind == .twitchProxy {
+                guard let configuration = source.proxyConfiguration, let channel, !channel.isEmpty else { throw ClientError.message("Enter a currently live channel in Edit to test this proxy.") }
+                _ = try await ProxyPlaybackProvider().resolve(configuration: configuration, request: .init(channelLogin: channel))
+                guard let index = sources.firstIndex(where: { $0.id == id && $0.proxyConfiguration == source.proxyConfiguration }) else { return }
+                sources[index].connectionStatus = "HLS manifests reachable · playback not verified"; sources[index].lastSuccessfulCheck = .now
+                try persist(); return
+            }
             let client = try client(for: source); let health = try await client.health(); let caps = try await client.capabilities()
             guard var current = sources.first(where: { $0.id == id }), current.baseURL == source.baseURL, current.enabled == source.enabled else { return }
             current.capabilities = caps; current.serverVersion = health.serverVersion; current.lastSuccessfulCheck = .now; current.connectionStatus = "Connected"
@@ -230,7 +262,26 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
             do { try persist() } catch { self.error = "Source status could not be saved." }
         }
     }
-    public func credential(for id: UUID) throws -> String? { try secrets.read(id.uuidString).flatMap { String(data: $0, encoding: .utf8) } }
+    public func move(_ id: UUID, by offset: Int) throws {
+        guard let index = sources.firstIndex(where: { $0.id == id }) else { return }
+        let target = max(0, min(sources.count - 1, index + offset))
+        guard index != target else { return }
+        sources.insert(sources.remove(at: index), at: target)
+        activeID = sources.first(where: \.enabled)?.id; fallbackID = nil; invalidateProbes(); try persist()
+    }
+    public func applySyncedOrder(_ ids: [UUID]) throws {
+        applyingRemote = true; defer { applyingRemote = false }
+        var seen = Set<UUID>()
+        let ordered = ids.compactMap { id -> StreamingSource? in
+            guard seen.insert(id).inserted else { return nil }; return sources.first { $0.id == id }
+        } + sources.filter { !ids.contains($0.id) }
+        if sources.map(\.id) != ordered.map(\.id) { sources = ordered; fallbackID = nil; invalidateProbes() }
+        activeID = sources.first(where: \.enabled)?.id; try persist()
+    }
+    public func credential(for id: UUID) throws -> String? {
+        guard let source = sources.first(where: { $0.id == id }), source.playbackKind == .twitchyServer, source.usesAuthentication else { return nil }
+        return try secrets.read(id.uuidString).flatMap { String(data: $0, encoding: .utf8) }
+    }
     public func applySynced(source: StreamingSource?, id: UUID, credential: String?) throws {
         applyingRemote = true; defer { applyingRemote = false }
         if var source {
@@ -248,5 +299,5 @@ public struct SourceAPIError: Error, LocalizedError, Sendable { public var statu
         activeID = id.flatMap { id in sources.contains { $0.id == id && $0.enabled } ? id : nil }
         if activeID == nil { activeID = sources.first(where: \.enabled)?.id }; try persist()
     }
-    private func persist() throws { do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(Saved(sources: sources, activeID: activeID)).write(to: url, options: .atomic); error = nil; if !applyingRemote { onChange?() } } catch { self.error = "Sources could not be saved."; throw error } }
+    private func persist() throws { do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(Saved(sources: sources, activeID: activeID, ordered: true)).write(to: url, options: .atomic); error = nil; if !applyingRemote { onChange?() } } catch { self.error = "Sources could not be saved."; throw error } }
 }

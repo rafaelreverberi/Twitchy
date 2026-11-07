@@ -1,17 +1,17 @@
 # iCloud sync setup and verification
 
-All three targets share `iCloud.org.example.twitchy`. Enable iCloud / CloudKit for their app identifiers in the same Apple Developer team and assign this container to each identifier. Select that team in Xcode and let automatic signing obtain the matching provisioning profiles. Personal development teams cannot provision iCloud. The project uses team `YOURTEAMID` and app identifiers `org.example.twitchy-macos`, `org.example.twitchy-ios`, and `org.example.twitchy-tvos`. The XcodeGen template explicitly preserves these identifiers. Unsigned and simulator builds keep the app usable locally and display the sync limitation in Settings.
+All three targets use the same container configured in `Config/Twitchy.local.xcconfig`. Enable iCloud with CloudKit for their App IDs in the same Apple Developer team and assign that container to each identifier. Automatic signing can then obtain the matching profiles. Simulator and unsigned builds run locally. See [self-build instructions](SELF_BUILD.md).
 
 The private database uses zone `TwitchyPersonal`, record type `TwitchyValue`, and an encrypted Bytes field named `value`. Development CloudKit initializes the schema when records are saved. Before TestFlight or production distribution, deploy this schema to Production in CloudKit Console. Do not create `value` as an unencrypted field; Apple does not allow converting existing plain fields to encrypted fields.
 
 Sync includes:
 
 - Sources, source bearer tokens and selected source. Imported tokens enter the source-only Keychain.
-- Every playback, chat and appearance preference, public OAuth application settings, recent searches and onboarding state.
+- Every playback, chat and appearance preference, your public Twitch Client ID and optional browser redirect settings, recent searches and onboarding state.
 - Watch entries including VOD/clip resume positions and actual viewing sessions across devices.
 - Short-lived Apple TV live-stream presence for the iPhone Companion Mode (TV name, channel login/name and broadcaster ID).
 
-Twitch access/refresh tokens, chat messages and downloaded media/indexes remain on each device. Offline downloaded paths and source health data cannot be transferred meaningfully to another device.
+Authorize Twitch separately on each device. Twitch access and refresh tokens, chat messages and downloaded media stay local. Offline downloaded paths and source health data cannot be transferred meaningfully to another device.
 
 When a source uses localhost, that address still means the receiving device. Configure a reachable HTTPS source or private network address for cross-device playback. Sync cannot make an unavailable server reachable.
 
@@ -32,3 +32,7 @@ On iPhone Home, tap the TV icon beside Settings. On Mac, use the TV icon beside 
 Both devices require signed iCloud-capable builds and the same iCloud account. Apple TV publishes an encrypted per-device presence record every 10 seconds while active; the open companion view checks every 5 seconds. Switches and stops propagate through CloudKit, so updates can take several seconds and depend on network availability. Presence expires after 60 seconds without a heartbeat, including when the TV app terminates before sending its stop record. No Twitch credentials or chat messages are included in presence records. The companion uses a separate chat connection and does not start video playback on the companion device.
 
 Tests validate presence transfer, heartbeat refresh, stop tombstones, invalid records and expiration using a fake transport, plus waiting/full-screen chat/composer/dismissal with simulator fixtures. Live CloudKit discovery and sending a Twitch message require a real signed Apple TV and iPhone; simulator fixtures do not exercise those services.
+
+## Mixed source ordering
+
+Source records now carry an optional kind (legacy nil means Twitchy Server), public proxy configuration when applicable, and server credentials only for the server kind. Older embedded-player records are ignored. One encrypted `sourceOrder` record stores ordered UUIDs; unknown concurrent additions are retained while deleted IDs are ignored. Last-writer conflict resolution of the order record follows the existing replica policy. Type, enablement and order sync; compatibility checks and connection test results remain device-local. Physical-device sync remains a separate validation step.

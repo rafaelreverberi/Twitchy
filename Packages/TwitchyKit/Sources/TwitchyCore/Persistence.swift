@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 import Security
@@ -76,7 +77,33 @@ public struct OAuthAppSettings: Codable, Sendable, Equatable {
     public var clientID: String
     public var deviceClientID: String
     public var redirect: String
-    public init(clientID: String, deviceClientID: String, redirect: String) { self.clientID = clientID; self.deviceClientID = deviceClientID; self.redirect = redirect }
+
+    public var deviceClientIDWasEntered: Bool?
+
+    public static func usableClientID(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public static func isFormerBundledClientID(_ id: String) -> Bool {
+        // Compare the old default without distributing it as a registration.
+        let fingerprint = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return fingerprint == "c91d1a40881602312efaf382da291b35993eccecdfa8e6d9c22a83f41844a12b"
+    }
+
+    public var usingOwnRegistration: Self? {
+        let browser = Self.usableClientID(clientID), device = Self.usableClientID(deviceClientID)
+        let ownBrowser = Self.isFormerBundledClientID(browser) ? "" : browser
+        let ownDevice = deviceClientIDWasEntered != true && Self.isFormerBundledClientID(device) ? "" : device
+        guard !ownBrowser.isEmpty || !ownDevice.isEmpty else { return nil }
+        return Self(clientID: ownBrowser, deviceClientID: ownDevice, redirect: redirect, deviceClientIDWasEntered: deviceClientIDWasEntered)
+    }
+
+    public init(clientID: String, deviceClientID: String, redirect: String, deviceClientIDWasEntered: Bool? = nil) {
+        self.clientID = clientID
+        self.deviceClientID = deviceClientID
+        self.redirect = redirect
+        self.deviceClientIDWasEntered = deviceClientIDWasEntered
+    }
 }
 public struct PersonalData: Codable, Sendable {
     public var favorites: [String] = []
@@ -85,6 +112,7 @@ public struct PersonalData: Codable, Sendable {
     public var watchSessions: [WatchSession]? = nil
     public var historyClearedAt: Date? = nil
     public var oauthSettings: OAuthAppSettings? = nil
+    public var proxyConfiguration: StreamingProxyConfiguration? = nil
     public var preferences = Preferences()
     public var onboardingComplete = false
     public var modifiedAt = Date()

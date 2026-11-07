@@ -19,3 +19,7 @@ __pycache__/
 *.provisionprofile
 *.certSigningRequest
 *.keystore
+
+# Machine-specific Apple signing and CloudKit settings.
+/Config/Twitchy.local.xcconfig
+/Config/.Twitchy.local.*

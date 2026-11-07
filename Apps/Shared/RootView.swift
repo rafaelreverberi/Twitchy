@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var destination: Destination? = .home
     #if os(macOS)
     @State private var showingCompanion = false
+    @AppStorage(DiscordPresence.enabledKey) private var discordEnabled = false
+    @AppStorage(DiscordPresence.applicationIDKey) private var discordApplicationID = ""
     #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -184,15 +186,28 @@ struct RootView: View {
             model.desktopFullscreen = false
         }
         .frame(minWidth: 940, minHeight: 640)
-        .task(id: model.playback.session?.sessionId) {
+        .task(id: model.playback.playbackID) {
             while model.nowPlaying != nil && !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); model.saveDesktopPosition() }
                 catch { return }
             }
         }
+        .task {
+            while !Task.isCancelled {
+                updateDiscordPresence()
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            }
+        }
+        .onChange(of: model.discordViewing) { _, _ in updateDiscordPresence() }
+        .onChange(of: discordEnabled) { _, _ in updateDiscordPresence() }
+        .onChange(of: discordApplicationID) { _, _ in updateDiscordPresence() }
         .onChange(of: model.playback.state) { _, state in if state == .failed { model.retryDesktopPlaybackIfNeeded() } }
         .onDisappear { model.stopDesktopPlayback() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stopDesktopPlayback() }
+    }
+    private func updateDiscordPresence() {
+        let bundledID = DiscordPresence.defaultApplicationID
+        model.discordPresence.update(enabled: discordEnabled, applicationID: bundledID.isEmpty ? discordApplicationID : bundledID, viewing: model.discordViewing)
     }
     #endif
     #if !os(tvOS)
@@ -234,7 +249,16 @@ struct WelcomeView: View {
                     Text("Browse live channels, keep up with your follows, and join chat directly through Twitch.").foregroundStyle(.secondary)
                     Label("Bring your streaming source", systemImage: "server.rack").font(.headline)
                     Text("Video comes from your own compatible server. You can connect Twitch and browse before adding a source.").foregroundStyle(.secondary)
-                    Button("Sign in with Twitch") { model.personal.data.onboardingComplete = true; Task { await model.login() } }.buttonStyle(.borderedProminent)
+                    if model.hasTwitchRegistration {
+                        Button("Sign in with Twitch") {
+                            model.personal.data.onboardingComplete = true
+                            Task { await model.login() }
+                        }.buttonStyle(.borderedProminent)
+                    } else {
+                        NavigationLink("Set Up Twitch Connection") {
+                            TwitchRegistrationTutorial(fromWelcome: true)
+                        }.buttonStyle(.borderedProminent)
+                    }
                     Button("Add a streaming source") { sources = true }.buttonStyle(.bordered)
                     Button("Start browsing") { model.personal.data.onboardingComplete = true }.accessibilityIdentifier("onboarding.complete")
                     Text("An independent third-party client. Not affiliated with Twitch.").font(.caption).foregroundStyle(.secondary)
@@ -249,7 +273,7 @@ struct WelcomeView: View {
 #endif
 struct LoginPrompt: View {
     @Environment(AppModel.self) private var model
-    var body: some View { VStack { EmptyState("Connect with Twitch", detail: "Twitch requires an access token for discovery. Sign in to browse channels and categories, even without a streaming source.", symbol: "person.crop.circle.badge.checkmark"); Button(model.auth.session == nil ? "Sign in with Twitch" : "Reconnect") { Task { if model.auth.session != nil { try? await model.auth.validate(); await model.refresh() }; if model.auth.session == nil { await model.login() } else if model.api == nil { model.showingSettings = true } } }.buttonStyle(.borderedProminent) }.padding(.bottom, 32) }
+    var body: some View { VStack { EmptyState("Connect with Twitch", detail: "Twitch requires an access token for discovery. Sign in to browse channels and categories, even without a streaming source.", symbol: "person.crop.circle.badge.checkmark"); Button(model.auth.session == nil ? model.twitchConnectTitle : "Reconnect") { Task { if model.auth.session != nil { try? await model.auth.validate(); await model.refresh() }; if model.auth.session == nil { await model.login() } else if model.api == nil { model.showingSettings = true } } }.buttonStyle(.borderedProminent) }.padding(.bottom, 32) }
 }
 struct HomeView: View {
     @Environment(AppModel.self) private var model
@@ -508,4 +532,152 @@ struct DiscoveryShimmer: ViewModifier {
             }
         }
     }
+}
+
+struct TwitchRegistrationTutorial: View {
+    private enum Step: Int {
+        case openConsole = 1, configure, enterID, signIn
+
+        var title: String {
+            switch self {
+            case .openConsole: "Open the Twitch Developer Console"
+            case .configure: "Configure your Twitch application"
+            case .enterID: "Save your Client ID"
+            case .signIn: "Sign in with Twitch"
+            }
+        }
+    }
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var step = Step.openConsole
+    @State private var input = ""
+    @State private var copied = false
+    @FocusState private var enteringID: Bool
+    var fromWelcome = false
+    var editExisting = false
+
+    private let console = URL(string: "https://dev.twitch.tv/console/apps")!
+    private var currentStep: Step { model.hasTwitchRegistration && !editExisting ? .signIn : step }
+
+    var body: some View {
+        #if os(tvOS)
+        TVPage(title: "Set Up Twitch Connection", backButton: true) {
+            HStack(alignment: .top, spacing: 60) {
+                content
+                if let url = helpURL {
+                    VStack(spacing: 16) {
+                        TVQRCode(value: url.absoluteString, label: "Scan to open on your phone")
+                            .frame(width: 250, height: 250)
+                        Text("Scan with your phone").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        #else
+        ScrollView {
+            content.padding(28).frame(maxWidth: 620).frame(maxWidth: .infinity)
+        }
+        .navigationTitle("Set Up Twitch Connection")
+        #endif
+    }
+
+    private var helpURL: URL? {
+        switch currentStep {
+        case .openConsole: console
+        case .configure: URL(string: AppModel.twitchCallback)
+        default: nil
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Step \(currentStep.rawValue) of 4").font(.subheadline).foregroundStyle(.secondary)
+            Text(currentStep.title).font(.title.bold()).accessibilityAddTraits(.isHeader)
+            switch currentStep {
+            case .openConsole:
+                Text("Sign in with your Twitch account and enable two-factor authentication if prompted. Under Applications, choose Register Your Application.")
+                #if !os(tvOS)
+                Link("Open Twitch Developer Console", destination: console)
+                #else
+                Text("dev.twitch.tv/console/apps").font(.callout).foregroundStyle(.secondary)
+                #endif
+                Text("Give the application a unique name, for example Twitchy followed by your username.")
+                Text("Sharing one Client ID across different applications violates Twitch’s developer rules. Use your own registration.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Button("Next: OAuth Redirect URL") { step = .configure }
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("oauth.next")
+                Button("I already have a Client ID") { step = .enterID }
+                Button("Check iCloud for an existing setup") { Task { await model.sync.sync(); model.applyOAuthSettings() } }
+                    .disabled(model.sync.cloud.isSyncing)
+            case .configure:
+                Text("In OAuth Redirect URLs, paste this address, then select Add.")
+                Text(AppModel.twitchCallback)
+                    .font(.callout.monospaced())
+                    #if !os(tvOS)
+                    .textSelection(.enabled)
+                    #endif
+                    .accessibilityIdentifier("oauth.redirectURL")
+                #if !os(tvOS)
+                Button(copied ? "Copied" : "Copy Redirect URL") { copyRedirect() }
+                    .buttonStyle(.bordered)
+                #else
+                Text("Open the address on your phone with the QR code, then copy it from the browser.")
+                    .font(.callout).foregroundStyle(.secondary)
+                #endif
+                Text("Choose Application Integration for Category and Public for Client Type. Complete the verification and select Create.")
+                Button("Next: Client ID") { step = .enterID }
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("oauth.next")
+                Button("Previous step") { step = .openConsole }
+            case .enterID:
+                Text("Back in the application list, choose Manage. Copy the Client ID and paste it here.")
+                TextField("Public Twitch Client ID", text: $input)
+                    #if !os(tvOS)
+                    .textFieldStyle(.roundedBorder)
+                    #endif
+                    #if os(iOS) || os(tvOS)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    #endif
+                    .focused($enteringID)
+                    .accessibilityIdentifier("oauth.clientID")
+                Button("Save Client ID") {
+                    enteringID = false
+                    model.saveTwitchRegistration(input)
+                    step = .signIn
+                    Task { await model.sync.sync() }
+                }
+                .disabled(OAuthAppSettings.usableClientID(input).isEmpty)
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("oauth.saveClientID")
+                Text("Your Client ID syncs through iCloud to devices on the same Apple Account.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Button("Previous step") { step = .configure }
+            case .signIn:
+                Label("Twitch Client ID configured", systemImage: "checkmark.circle")
+                    .accessibilityIdentifier("oauth.clientIDConfigured")
+                if model.accountSignedIn {
+                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                } else {
+                    Text("Authorize Twitchy on this device. Your other devices can use the same Client ID and go straight to sign-in.")
+                    Button("Sign in with Twitch") {
+                        dismiss()
+                        if fromWelcome { model.personal.data.onboardingComplete = true }
+                        Task { await model.login(presentSettings: fromWelcome) }
+                    }.buttonStyle(.borderedProminent)
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    #if !os(tvOS)
+    private func copyRedirect() {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(AppModel.twitchCallback, forType: .string)
+        #else
+        UIPasteboard.general.string = AppModel.twitchCallback
+        #endif
+        copied = true
+    }
+    #endif
 }

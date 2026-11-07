@@ -235,9 +235,10 @@ struct MobileChannelView: View {
         }.buttonStyle(.plain)
         .contextMenu {
             Button("Watch", systemImage: "play") { watch(type: type, id: id, title: title, thumbnail: thumbnail, duration: badge) }
-            if model.sources.active?.capabilities?.clientSideDownloads == true {
+            if !model.canDownload { Button("Downloads require a Twitchy Server") {}.disabled(true) }
+            if model.canDownload {
                 Button("Download", systemImage: "arrow.down.circle") { Task {
-                    do { await model.downloads.enqueue(client: try model.sources.client(), type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title, channel: selection.name, thumbnailURL: thumbnailURL(thumbnail), duration: badge)) }
+                    do { await model.downloads.enqueue(client: try model.sources.client(for: model.downloadSource), type: type, contentID: id, quality: model.personal.data.preferences.preferredQuality, metadata: .init(title: title, channel: selection.name, thumbnailURL: thumbnailURL(thumbnail), duration: badge)) }
                     catch { self.error = error.localizedDescription }
                 } }
             }

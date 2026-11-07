@@ -26,7 +26,7 @@ struct TVRootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if (TVFixtures.screen?.hasPrefix("onboarding") == true) || (model.startupComplete && !model.isOffline && model.auth.session == nil && (!skippedOnboarding || signIn) && !TVFixtures.enabled) {
+            if (TVFixtures.screen?.hasPrefix("onboarding") == true) || (model.startupComplete && model.auth.session == nil && (signIn || (!model.isOffline && !skippedOnboarding)) && !TVFixtures.enabled) {
                 TVSignInView { signIn = false; skippedOnboarding = model.auth.session == nil }
             } else if let selection = model.selectedChannel {
                 NavigationStack { TVChannelView(selection: selection) }.id(selection.id)
@@ -51,7 +51,7 @@ struct TVRootView: View {
         .onChange(of: model.selectedChannel?.id) { _, id in
             if id == nil && !model.playback.pictureInPictureActive { model.sampleViewing(); model.chat.disconnect(); model.playback.player.pause(); Task { await model.playback.stop() } }
         }
-        .task(id: "\(model.startupComplete)|\(model.tvCompanionBroadcasterID ?? "")|\(scenePhase)|\(model.playback.state)|\(model.playback.session?.sessionId ?? "")|\(model.selectedChannel?.id.uuidString ?? "")") {
+        .task(id: "\(model.startupComplete)|\(model.tvCompanionBroadcasterID ?? "")|\(scenePhase)|\(model.playback.state)|\(model.playback.playbackID ?? "")|\(model.selectedChannel?.id.uuidString ?? "")") {
             guard model.startupComplete, !TVFixtures.enabled else { return }
             while !Task.isCancelled {
                 await publishCompanion()
@@ -70,7 +70,7 @@ struct TVRootView: View {
         var presence: TVLivePresence?
         if scenePhase == .active, let selection = model.selectedChannel,
            let request = model.playback.currentRequest, request.contentType == "live",
-           request.channelLogin == selection.login, model.playback.session != nil,
+           request.channelLogin == selection.login, model.playback.hasMedia,
            [.playing, .buffering, .adBreak, .reconnecting].contains(model.playback.state) {
             // Direct playback can begin before the optional channel profile request finishes.
             let id = selection.broadcasterID ?? model.tvCompanionBroadcasterID
@@ -89,19 +89,23 @@ struct TVRootView: View {
 struct TVSignInView: View {
     @Environment(AppModel.self) private var model
     var completed: () -> Void
+    @State private var showingSetup = false
     var body: some View {
         HStack(spacing: 100) {
             VStack(alignment: .leading, spacing: 28) {
                 HStack(spacing: 16) { BrandMark(size: 64); Text("Twitchy") }
                     .font(.system(size: 46, weight: .bold)).foregroundStyle(TwitchyTheme.highlight)
                 Text("Your streams.\nOn the big screen.").font(.system(size: 66, weight: .bold)).fixedSize(horizontal: false, vertical: true)
-                Text("Scan with your phone. Sign in on Twitch.\nYour channels are ready.").font(.system(size: 28)).foregroundStyle(.secondary)
+                Text(model.hasTwitchRegistration ? "Scan with your phone to authorize Twitchy." : "Register your own Twitch application to get a Client ID.").font(.system(size: 28)).foregroundStyle(.secondary)
                 if let error = model.auth.error { Text(error).foregroundStyle(.secondary).font(.system(size: 24)) }
                 HStack(spacing: 24) {
                     if model.auth.isSigningIn {
                         Button("Cancel") { model.auth.cancelLogin() }
-                    } else {
+                    } else if model.hasTwitchRegistration {
                         Button("Connect Twitch") { Task { await model.login() } }.buttonStyle(.borderedProminent).accessibilityIdentifier("tv.connect")
+                    } else {
+                        Button("Set Up Twitch Connection") { showingSetup = true }.buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("oauth.setup")
                     }
                     Button("Browse later") { model.auth.cancelLogin(); model.personal.data.onboardingComplete = true; completed() }.accessibilityIdentifier("onboarding.complete")
                 }.padding(.top, 20)
@@ -115,13 +119,13 @@ struct TVSignInView: View {
                     ProgressView("Waiting for Twitch…").font(.system(size: 24))
                 } else {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 170)).foregroundStyle(TwitchyTheme.highlight)
-                    Text(model.auth.isSigningIn ? "Connecting to Twitch…" : "Sign in with your phone").font(.system(size: 28))
+                    Text(model.auth.isSigningIn ? "Connecting to Twitch…" : model.hasTwitchRegistration ? "Sign in with your phone" : "Twitch setup").font(.system(size: 28))
                 }
             }.frame(width: 420)
         }
         .padding(.horizontal, 90).padding(.vertical, 60).frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(TwitchyTheme.background.ignoresSafeArea())
-        .task { if !TVFixtures.enabled && !model.auth.isSigningIn { await model.login() } }
+        .fullScreenCover(isPresented: $showingSetup) { TwitchRegistrationTutorial() }
         .onChange(of: model.auth.status) { _, status in
             if status == "Connected" {
                 model.personal.data.onboardingComplete = true
@@ -133,15 +137,17 @@ struct TVSignInView: View {
 }
 struct TVQRCode: View {
     let value: String
+    var label = "Scan to sign in on Twitch"
     private var image: UIImage? {
-        guard let url = URL(string: value), url.scheme == "https", ["twitch.tv", "www.twitch.tv"].contains(url.host ?? "") else { return nil }
+        guard let url = URL(string: value), url.scheme == "https",
+              ["twitch.tv", "www.twitch.tv", "dev.twitch.tv"].contains(url.host ?? "") || value == AppModel.twitchCallback else { return nil }
         let filter = CIFilter.qrCodeGenerator(); filter.message = Data(value.utf8); filter.correctionLevel = "M"
         guard let output = filter.outputImage, let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
     var body: some View {
         Group { if let image { Image(uiImage: image).resizable().interpolation(.none).scaledToFit() } else { Image(systemName: "qrcode") } }
-            .padding(22).background(.white, in: RoundedRectangle(cornerRadius: 20)).accessibilityLabel("Scan to sign in on Twitch")
+            .padding(22).background(.white, in: RoundedRectangle(cornerRadius: 20)).accessibilityLabel(label)
     }
 }
 
@@ -371,7 +377,7 @@ struct TVSettingsView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     Text(model.user?.displayName ?? model.auth.session?.login ?? "Twitch account").font(.system(size: 34, weight: .semibold))
                     Text(model.accountStatus).foregroundStyle(.secondary)
-                    if !model.accountSignedIn { Button("Connect Twitch", action: signIn).buttonStyle(.borderedProminent) }
+                    if !model.accountSignedIn { Button(model.hasTwitchRegistration ? "Connect Twitch" : "Set Up Twitch Connection", action: signIn).buttonStyle(.borderedProminent) }
                     NavigationLink("Streaming sources") { TVSourcesView() }.accessibilityIdentifier("tv.sources")
                     Text(model.sources.active?.name ?? "No source selected").foregroundStyle(.secondary)
                     Divider()
@@ -379,7 +385,7 @@ struct TVSettingsView: View {
                     Text(model.sync.cloud.status).font(.system(size: 25)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if let date = model.sync.cloud.lastSyncedAt { Text("Last synced \(date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 23)).foregroundStyle(.secondary) }
                     Button("Sync now") { Task { await model.sync.sync() } }.disabled(model.sync.cloud.isSyncing).accessibilityIdentifier("tv.sync")
-                    Text("Sources and preferences sync with iCloud.\nTwitch sign-in stays on this Apple TV.").font(.system(size: 23)).foregroundStyle(.secondary)
+                    Text("Sources, your Twitch Client ID and preferences sync with iCloud.\nAuthorize Twitch on each device.").font(.system(size: 23)).foregroundStyle(.secondary)
                     if let error = model.personal.error { Text(error).font(.system(size: 23)).foregroundStyle(.secondary) }
                     if model.auth.session != nil { Button("Sign out", role: .destructive) { Task { model.chat.disconnect(); await model.playback.stop(); await model.auth.logout(); await model.refresh() } } }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -403,8 +409,11 @@ struct TVSettingsView: View {
 }
 struct TVAdvancedSettings: View {
     @Environment(AppModel.self) private var model
-    var body: some View { @Bindable var model = model
-        TVPage(title: "Twitch application", backButton: true) { TextField("Public Client ID", text: $model.deviceClientID); Text("Use a public Twitch app registration.").foregroundStyle(.secondary) }
+    var body: some View {
+        TVPage(title: "Advanced", backButton: true) {
+            NavigationLink("Manage sources") { ProxySettingsView() }
+            NavigationLink("Set Up Twitch Connection") { TwitchRegistrationTutorial(editExisting: true) }
+        }
     }
 }
 struct TVSourcesView: View {
@@ -413,7 +422,7 @@ struct TVSourcesView: View {
     var body: some View {
         TVPage(title: "Streaming sources", backButton: true) {
             HStack(spacing: 30) {
-                NavigationLink("Add source") { TVSourceEditor(source: nil) }.buttonStyle(.borderedProminent)
+                NavigationLink { AddSourceView() } label: { Label("Add", systemImage: "plus") }.buttonStyle(.borderedProminent)
                 Button("Sync from iCloud") { Task { await model.sync.sync() } }
             }
             if model.sources.sources.isEmpty { Text("Add a source here, or sync the one from your iPhone or Mac.").foregroundStyle(.secondary) }
@@ -421,11 +430,16 @@ struct TVSourcesView: View {
             ForEach(model.sources.sources) { source in
                 VStack(alignment: .leading, spacing: 20) {
                     HStack { Text(source.name).font(.system(size: 34, weight: .semibold)); if source.id == model.sources.activeID { Label("Active", systemImage: "checkmark.circle.fill").foregroundStyle(TwitchyTheme.live) } }
+                    Text(source.playbackKind.title).foregroundStyle(.secondary)
                     Text(source.connectionStatus).foregroundStyle(.secondary)
                     HStack(spacing: 30) {
                         Button("Test") { Task { await model.sources.test(source.id) } }
                         Button("Select") { do { try model.sources.select(source.id) } catch { self.error = error.localizedDescription } }.disabled(!source.enabled)
-                        NavigationLink("Edit") { TVSourceEditor(source: source) }
+                        NavigationLink("Edit") { if source.playbackKind == .twitchyServer { TVSourceEditor(source: source) } else { PlaybackSourceEditor(kind: source.playbackKind, source: source) } }
+                    }
+                    HStack(spacing: 30) {
+                        Button("Move Up") { do { try model.sources.move(source.id, by: -1) } catch { self.error = error.localizedDescription } }.disabled(model.sources.sources.first?.id == source.id)
+                        Button("Move Down") { do { try model.sources.move(source.id, by: 1) } catch { self.error = error.localizedDescription } }.disabled(model.sources.sources.last?.id == source.id)
                         Button("Remove", role: .destructive) { do { try model.sources.remove(source.id) } catch { self.error = error.localizedDescription } }
                     }
                     Divider()
@@ -484,6 +498,7 @@ enum TVPlaybackSettings {
     }
 }
 struct TVQualitySettings: View {
+    @Environment(AppModel.self) private var model
     @State private var quality = TVPlaybackSettings.preferredQuality
     private var choices: [String] {
         var values = ["auto"]
@@ -492,6 +507,7 @@ struct TVQualitySettings: View {
     }
     var body: some View {
         TVPage(title: "Video quality", backButton: true) {
+            if let name = model.playback.providerName { Text("Active provider: " + name).foregroundStyle(.secondary) }
             Text("Best lets your streaming source choose the highest available quality. Applies to this Apple TV.").foregroundStyle(.secondary)
             ForEach(choices, id: \.self) { value in
                 Button { quality = value; TVPlaybackSettings.preferredQuality = value } label: {
@@ -547,23 +563,24 @@ struct TVChannelView: View {
                 }
             } catch is CancellationError {} catch { self.error = error.localizedDescription }
         }
-        .task(id: model.playback.session?.sessionId) {
-            if let session = model.playback.session { TVPlaybackSettings.remember(session.qualities) }
-            while !Task.isCancelled && model.playback.session != nil {
+        .task(id: model.playback.playbackID) {
+            if model.playback.hasMedia { TVPlaybackSettings.remember(model.playback.qualities) }
+            while !Task.isCancelled && model.playback.hasMedia {
                 do { try await Task.sleep(for: .seconds(10)); try Task.checkCancellation(); savePosition() } catch { return }
             }
         }
         .onChange(of: model.playback.state) { _, state in
-            if state == .failed && model.personal.data.preferences.retryPlayback && retries < 2 {
+            if !model.playback.managesRecovery && state == .failed && model.playback.failureIsRetryable && model.personal.data.preferences.retryPlayback && retries < 2 {
                 retries += 1; let delay = retries * 2; retryTask?.cancel()
-                retryTask = Task { do { try await Task.sleep(for: .seconds(delay)); try Task.checkCancellation(); await model.playback.retry() } catch {} }
+                retryTask = Task { do { try await Task.sleep(for: .seconds(delay)); try Task.checkCancellation(); await model.playback.retry(automatic: true) } catch {} }
             }
         }
         .onDisappear { if !model.playback.pictureInPictureActive { stop() } }
     }
     private var fullscreenPlayer: some View {
-        ZStack {
-            if model.playback.session != nil {
+        ZStack(alignment: .top) {
+            PlaybackProviderNotice().padding(30).zIndex(1).allowsHitTesting(false)
+            if model.playback.hasMedia {
                 TVPlayerSurface().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.error == nil && model.playback.error == nil {
                 // AVKit owns loading once a session exists; never overlay a second spinner.
@@ -575,6 +592,7 @@ struct TVChannelView: View {
                     HStack(spacing: 30) {
                         Button("Back") { close() }
                         Button("Retry") { play(type: model.playback.currentRequest?.contentType ?? selection.contentType ?? "live", id: model.playback.currentRequest?.contentId ?? selection.contentID) }
+                        NavigationLink("Sources") { ProxySettingsView() }
                         if model.sources.active == nil { NavigationLink("Connect a streaming source") { TVSourcesView() } }
                     }
                 }.padding(44).background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 20))
@@ -638,7 +656,7 @@ struct TVPlayerSurface: View {
     var body: some View {
         NativePlayer(player: model.playback.player, pictureInPicture: model.personal.data.preferences.pictureInPicture) { model.playback.pictureInPictureActive = $0 }
             .background(.black).accessibilityIdentifier("tv.player")
-            .accessibilityValue(model.playback.state.rawValue + "|" + (model.playback.session?.sessionId ?? ""))
+            .accessibilityValue(model.playback.state.rawValue + "|" + (model.playback.playbackID ?? ""))
     }
 }
 #endif

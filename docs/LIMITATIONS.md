@@ -14,3 +14,9 @@ Server states are initially supplied with session creation; no ongoing source st
 Official documentation: https://dev.twitch.tv/docs/ , https://dev.twitch.tv/docs/embed/video-and-clips/ , https://legal.twitch.com/en/legal/developer-agreement/ . Reviewed 2026-10-09.
 
 The public Helix API provides metadata, not a general arbitrary native-stream extraction endpoint. Twitch's supported embedded player has its own player, domain and advertising requirements; Twitchy does not use it or claim its approval. A custom AVPlayer/source architecture is technically implemented but **does not establish permission to redistribute Twitch video, suppress advertisements, bypass access controls, or publish this client**. Backend operators and distributors must obtain/review applicable permissions and current terms. No ad filtering, DRM circumvention or ad-free guarantee exists in the Apple client. A server may truthfully report a pause/filtering status; missing original content is never reconstructed or faked. MIT covers original software only.
+
+## Streaming source boundaries
+
+No public proxy is bundled or endorsed. Proxy addresses are user-controlled and may fail or change; a successful network sample does not establish permission, long-term availability or ad removal. Sources sync type/configuration/enablement/order through provisioned iCloud; physical multi-device verification is separate from deterministic sync tests.
+
+Streaming uses native AVPlayer. Downloads require a connected capable Twitchy Server. Previously saved files remain playable. See [sources](SOURCES.md) and [privacy](../PRIVACY.md).

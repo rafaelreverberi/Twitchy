@@ -49,7 +49,7 @@ import TwitchySources
         // Opening the same content is a presentation change, including while it is loading.
         if let current = selection, current.login == channel.login, current.contentType == type, current.contentID == id,
            sourceID == model.sources.activeID, sourceURL == model.sources.selected?.baseURL,
-           playbackTask != nil || model.playback.player.currentItem != nil {
+           playbackTask != nil || model.playback.hasMedia || model.playback.player.currentItem != nil {
             self.thumbnailURL = thumbnailURL ?? self.thumbnailURL
             self.duration = duration ?? self.duration
             return
@@ -69,7 +69,7 @@ import TwitchySources
                 await player.seek(to: CMTime(seconds: active.resumePosition, preferredTimescale: 600))
             }
             playbackTask = nil
-            if model.playback.session == nil { error = model.error ?? model.playback.error ?? "The stream could not be started." }
+            if !model.playback.hasMedia { error = model.error ?? model.playback.error ?? "The stream could not be started." }
             handleState()
         }
     }
@@ -132,13 +132,13 @@ import TwitchySources
         guard !model.isOfflinePlayback, selection != nil, sourceID != model.sources.activeID || sourceURL != model.sources.selected?.baseURL else { return }
         stop()
     }
-    func retry() {
+    func retry(automatic: Bool = false) {
         guard let channel = selection else { return }
         retryTask?.cancel(); retryTask = nil; playbackTask?.cancel(); error = nil; model.error = nil
         let current = generation
         playbackTask = Task { [weak self] in
             guard let self else { return }
-            if model.playback.currentRequest != nil { await model.playback.retry() }
+            if model.playback.currentRequest != nil { await model.playback.retry(automatic: automatic) }
             else { await model.play(channel, contentType: channel.contentType ?? "live", contentID: channel.contentID) }
             guard !Task.isCancelled, generation == current else { return }
             playbackTask = nil; handleState()
@@ -156,15 +156,15 @@ import TwitchySources
     }
     func handleState() {
         guard selection != nil else { return }
-        if state == .playing { error = nil; recovering = false; retryAttempt = 0; surface.preparePiP() }
+        if state == .playing { error = nil; recovering = false; surface.preparePiP() }
         if state == .failed, retryTask == nil, playbackTask == nil { recovering = false }
-        guard state == .failed, model.playback.failureIsRetryable, model.personal.data.preferences.retryPlayback,
+        guard !model.playback.managesRecovery, state == .failed, model.playback.failureIsRetryable, model.personal.data.preferences.retryPlayback,
               retryAttempt < 2, retryTask == nil, playbackTask == nil else { return }
         recovering = true; retryAttempt += 1; let delay = retryAttempt; let current = generation
         retryTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             guard let self, generation == current, state == .failed, selection != nil else { return }
-            retryTask = nil; retry()
+            retryTask = nil; retry(automatic: true)
         }
     }
     func loadWatchingProfile() async {

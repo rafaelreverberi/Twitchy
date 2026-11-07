@@ -4,6 +4,10 @@ This is a historical development log, not the current feature list. Start with t
 
 Diagnostic screenshots have been removed from the public tree; the recorded checks below remain historical evidence.
 
+## Ordered sources and official playback — 2026-11-03
+
+At that point the mixed-provider implementation had 106 successful package/fixture tests, successful macOS/iOS/tvOS SDK builds, iPhone source creation/order UI coverage, and actual official Twitch playback on macOS and an iPad simulator including fullscreen and native pause/resume. Two manually configured proxies also passed bounded live HLS/AVPlayer tests for BastiGHG and LetsHugoTV. See the [dated evidence and limits](PROXY_RESEARCH.md#follow-up-mixed-sources-letshugo-and-bastighg--2026-11-03). The official Pages bridge was published separately; app changes remain local. Physical devices, production multi-device iCloud and real account consent are still separate acceptance work. Older entries below are historical.
+
 ## Documentation refresh — 2026-10-18
 
 Local documentation/asset links and explicit README navigation anchors were checked (85 references); the OpenAPI JSON/reference check and `git diff --check` passed. This update changes documentation and assets only; no new app binary or live-account verification was performed.

@@ -1,38 +1,39 @@
-# Streaming sources
+# Sources and playback order
 
-A source supplies video; Twitch sign-in supplies account data and chat. You need both for the complete experience. The app does not acquire Twitch video or filter ads itself.
+**Sources → + → Add Source** offers two kinds:
 
-## Connect a source
+| Type | Configuration | Playback | New downloads |
+|---|---|---|---|
+| Twitch Proxy | User-entered base URL or `{channel}` HLS URL template | Native AVPlayer, live only | No |
+| Twitchy Server | Source API v1 base URL; optional independent access token | Native AVPlayer with source sessions, supported live/VOD/clips | Only when connected and capable |
 
-1. Set up a source implementing [Source API v1](SERVER_API.md), such as the optional [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server).
-2. On iPhone, iPad or Mac, open **Profile → Settings → Sources**. On Apple TV, open **Settings → Sources**.
-3. Add the server's base URL and its independent bearer token if required.
-4. Check the connection and capabilities, then select the source as Primary.
+Open **Profile → Settings → Sources** on Mac/iPhone/iPad or **Settings → Sources** on Apple TV. Press Add/plus, select the type, configure and save. Move Up/Down changes priority; selecting an entry moves it to the top. Disabled entries are skipped. For example: **Server A → Server B → custom proxy**. Proxies are not automatically forced behind servers: the displayed user order is authoritative.
 
-For Twitchy Server, follow its [Docker/HTTPS setup](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/SETUP.md). On the same Mac, local development can use `http://localhost:8080` with local HTTP enabled. Other devices need a reachable LAN or trusted HTTPS address. Set the server's `PUBLIC_BASE_URL` to the player-reachable address too, because it is used in generated media URLs.
+Type, public configuration, enablement and order sync through private encrypted iCloud records. Each source retains a stable UUID; server credentials sync only in the existing encrypted path and enter the destination Keychain. Health/test results remain local. Legacy server files decode as Twitchy Servers and preserve the previously preferred source at the top. A preceding Advanced-only custom proxy is migrated into this list once. Device provisioning is required for actual CloudKit transport; fixture tests verify the merge/order behavior separately.
 
-Twitchy Server offers **server-side adblock / ad filtering** for recognized, marked segments. It may pause video during ad breaks; unrecognized ads can remain. See [ad handling](https://github.com/rafaelreverberi/twitchy-server/blob/main/docs/ADBLOCK.md). Other sources may behave differently.
+Older embedded-player entries are ignored when loading saved sources or receiving iCloud records. Other sources retain their configuration and relative priority.
 
-## Manage sources
+## Custom proxy
 
-Open Profile → Settings → Sources. Add a name and HTTPS base URL, optionally enable independent bearer authentication and enter the credential issued by that server. On iPhone/iPad and Mac, tap a server to make it Primary; Edit and Check have separate buttons, and version/capability information, disabling and removal live under Details. Local HTTP is under Advanced in the editor. Removing a source also deletes its Keychain entry. Explicit changes to the preferred server stop the current playback session. Apple TV keeps its existing settings and source screens.
+The app includes no public endpoint list or recommended public default. Enter only an address whose operator permits your use. **Automatic** accepts a Luminous-compatible base URL (a missing scheme becomes HTTPS), or chooses direct HLS when the address contains `{channel}`. Explicit contract choices are available when needed. Generic HTTP/SOCKS forward proxies are not supported.
 
-Sources sits above iCloud Sync in Settings. Twitch application configuration is under Advanced, immediately above About.
+Examples for your own service:
 
-## Automatic fallback
+- Base URL: `https://your-host.example/prefix` → `/prefix/live/{channel}?allow_source=true&allow_audio_only=true`.
+- Direct template: `https://your-host.example/playlist?login={channel}&mode=live`.
 
-Twitchy probes all enabled servers concurrently at startup and after a network-path change. Each authenticated `/v1/health` probe makes one request with a three-second request timeout and four-second transport resource timeout, without HTTP retry/backoff. Results are reused for up to 30 seconds when starting playback; a playback failure forces another check. Disabled servers are excluded.
+Public query parameters and deployment prefixes are retained. Channels are normalized and validated. Credentials/fragments and unsafe endpoints are rejected; public HTTPS uses ordinary certificate verification. Local HTTP requires explicit development trust and the existing private-host URL policy. The proxy receives no Twitch/server authentication. Short-lived media signatures are kept only in memory.
 
-The selected Primary remains the saved and synced preference. A healthy backup is only a device-local runtime choice. The existing source order determines backup priority. Health checks do not bounce an ongoing stream back to Primary; a new playback request prefers Primary again when it is available. Stale probe results cannot override edits or manual selection.
+Enter a currently live channel and use **Test Connection**. It checks master/media and one child manifest, not every segment or actual playback. A proxy 404 can mean a wrong login or provider/upstream failure; it is not sufficient proof that Twitch content is offline. The November 3 investigation found `letshugotv` is the relevant LetsHugo Twitch login; `letshugo` returned 404. See [dated measurements](PROXY_RESEARCH.md), which are research observations rather than endorsements.
 
-Session creation tries a healthy alternative once after a recoverable server/network error. AVPlayer item failures and failures during playback use the existing bounded retry setting; when enabled, retries resolve a healthy alternative and restore non-live playback position. Offline files and non-retryable content/permission errors do not trigger fallback. Downloads already in progress retain their original server.
+## Twitchy Server and downloads
 
-Fallback can require a new media session and buffering; it does not guarantee gapless playback. Local fixture tests verify routing and credential isolation, rather than proving availability or uninterrupted playback on production servers.
+Use a backend implementing [Source API v1](SERVER_API.md), such as the separate [Twitchy Server](https://github.com/rafaelreverberi/twitchy-server). Credentials are independent of Twitch sign-in. HTTPS is required outside explicitly trusted local development. Server URL paths are preserved. Server sessions negotiate capabilities, use native quality/state semantics and DELETE cleanup/expiry. Sources cannot borrow one another’s credentials or redirect authenticated control requests to a third party.
 
-Tailscale HTTPS names with valid system-trusted certificates are supported like any other HTTPS host. Certificate verification is never disabled. Source URLs must have a host and no embedded user/password, query or fragment. Paths are preserved as prefixes: `https://host/client` calls `/client/v1/health`.
+A newly requested download is enabled only for a currently connected capable Twitchy Server, and never while the active playback provider is a proxy. The UI explains this restriction on iPhone/iPad/Mac. Existing downloads and local/offline playback remain usable; existing transfers retain their original source identity. Apple TV has no download interface.
 
-Local HTTP requires explicit per-source opt-in and is accepted only for loopback, .local names and RFC1918 IPv4 addresses. ATS allows local networking, with no global insecure-load exception. Some OS versions may still require a trusted HTTPS endpoint for numeric local addresses. Production deployments should use HTTPS.
+## Recovery and boundaries
 
-Non-sensitive source metadata is stored in Application Support/Twitchy/sources.json. Source bearer tokens use a distinct device-only Keychain service. Twitch tokens use another service and cannot enter StreamingSourceClient. Health and capabilities are checked independently; playback negotiates fresh capabilities so stale saved metadata cannot bypass gating.
+Server probes are bounded; source session creation retains existing timeouts/capability negotiation. Recoverable server failures and proxy resolution failures advance through the displayed order. Source authentication/permission/offline errors remain terminal. Item/startup/stall recovery excludes previously failed provider UUIDs within a bounded chain. New requests and explicit Retry start normal priority again. A recovered earlier source never interrupts an already working fallback.
 
-Media URLs may contain short-lived signatures issued by the source; long-lived source credentials are never appended. AVPlayer uses its own normal network handling. Cross-origin redirects on authenticated control/file requests are refused. The client does not validate that a server is legally entitled to provide third-party media; source operators must establish permission.
+[Implementation and limitations](PROXY_FALLBACK.md) describe cancellation, validation and native playback. Twitchy is an independent client, not an ad blocker, proxy operator or legal approval. Only configure permitted services/content. No anonymity, continuous availability or ad-free experience is promised.

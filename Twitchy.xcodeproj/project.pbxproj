@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D1C019D7A11C402280000002 /* DiscordPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C019D7A11C402280000001 /* DiscordPresence.swift */; };
 		00410C25D59856CCFA6F1752 /* MobileChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADEC7C2A78DFE0722B10F789 /* MobileChatView.swift */; };
 		0045573206D8277BF16B527F /* TwitchyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAD7C40863E375AF11EBFA9 /* TwitchyApp.swift */; };
 		013C6F965609EDE0482C5157 /* TwitchySources in Frameworks */ = {isa = PBXBuildFile; productRef = 9AB9BDE98ADDE8F7B3069C20 /* TwitchySources */; };
@@ -99,6 +100,12 @@
 		F5F1F0061D4FB8BC95D68B96 /* TwitchyCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2FD2291E79CFD5BF864E3481 /* TwitchyCore */; };
 		F9F16127D1C22460DAD01B93 /* TVFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33BF1C35ACB7801DECEBB322 /* TVFixtures.swift */; };
 		FED17A082F9E56B087CC0FEF /* TwitchyChat in Frameworks */ = {isa = PBXBuildFile; productRef = 50BC8A0A6F6D8A5A82040285 /* TwitchyChat */; };
+		5DAB7E84ACDF760D07CB1C84 /* ProxySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0F1CEF9D0D64FD65DCD7E0 /* ProxySettingsView.swift */; };
+		7248AAF61EFCFA1B15E24A3E /* ProxySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0F1CEF9D0D64FD65DCD7E0 /* ProxySettingsView.swift */; };
+		ACF7CFCEA064B52906BEC2FD /* ProxySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0F1CEF9D0D64FD65DCD7E0 /* ProxySettingsView.swift */; };
+		86FAF92A849BE4D46CD57F53 /* AddSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2974F90F9F464263C974C88C /* AddSourceView.swift */; };
+		FA2AF5D03029FA5B6932A4EE /* AddSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2974F90F9F464263C974C88C /* AddSourceView.swift */; };
+		FCA1FE70651CF8C957AF95AE /* AddSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2974F90F9F464263C974C88C /* AddSourceView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -126,6 +133,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D1C019D7A11C402280000003 /* Twitchy.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Twitchy.xcconfig; sourceTree = "<group>"; };
+		D1C019D7A11C402280000001 /* DiscordPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscordPresence.swift; sourceTree = "<group>"; };
 		12074C2713422A898D0BD72A /* Twitchy-tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; name = "Twitchy-tvOS.app"; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1839676C8A0857CD13F2A7F1 /* Twitchy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Twitchy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		299D57EA01052822E4020017 /* MobilePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePlayback.swift; sourceTree = "<group>"; };
@@ -159,6 +168,8 @@
 		E6CC2C613597595A73B530E3 /* TwitchyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TwitchyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA280CB5BCFA86DA6ABB997D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F34ECC617628886598EF76F0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		ED0F1CEF9D0D64FD65DCD7E0 /* ProxySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxySettingsView.swift; sourceTree = "<group>"; };
+		2974F90F9F464263C974C88C /* AddSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddSourceView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -224,6 +235,7 @@
 		35101D8CD58D6BB59B0C0DA5 = {
 			isa = PBXGroup;
 			children = (
+				D1C019D7A11C402280000003 /* Twitchy.xcconfig */,
 				668C84E42AA06559759A1D5A /* Packages */,
 				AF91D3651F577ED986415ECE /* Resources */,
 				996C2D5C04FF2D9CC8B6A6B3 /* Shared */,
@@ -304,16 +316,19 @@
 		996C2D5C04FF2D9CC8B6A6B3 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				2974F90F9F464263C974C88C /* AddSourceView.swift */,
 				EA280CB5BCFA86DA6ABB997D /* AppModel.swift */,
 				9A3798E52658E5BFE31F1462 /* ChannelDetail.swift */,
 				D2B77DDFAC1E7C30F0B03063 /* DownloadsView.swift */,
 				9D0BD37CD2DD63672A0BC0E9 /* MacHomeView.swift */,
+				D1C019D7A11C402280000001 /* DiscordPresence.swift */,
 				BEEEFA086DD0E86C2CB2E188 /* MobileChannelView.swift */,
 				ADEC7C2A78DFE0722B10F789 /* MobileChatView.swift */,
 				AA33B13C77A68260A7CF587E /* MobileCompanionView.swift */,
 				B2B51F37DEC613D04AA63246 /* MobileFixtures.swift */,
 				299D57EA01052822E4020017 /* MobilePlayback.swift */,
 				D269341F7BD904ED43BB233E /* MobileWatchView.swift */,
+				ED0F1CEF9D0D64FD65DCD7E0 /* ProxySettingsView.swift */,
 				68DC7D882795E6A8887C791D /* RootView.swift */,
 				A8229107D231D14F33914AC7 /* SearchView.swift */,
 				F34ECC617628886598EF76F0 /* SettingsView.swift */,
@@ -507,26 +522,33 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					21E1F17B763B244487127E77 = {
+
 						ProvisioningStyle = Automatic;
 					};
 					46D56289ABE98E85D1956BB1 = {
+
 						ProvisioningStyle = Automatic;
 					};
 					7F07B432FAA4C45B12567E32 = {
+
 						ProvisioningStyle = Automatic;
 						TestTargetID = C8A66AC95F905BBA7E1C67DF;
 					};
 					81D8602A59DDBAA5F2CDCE55 = {
+
 						ProvisioningStyle = Automatic;
 						TestTargetID = 46D56289ABE98E85D1956BB1;
 					};
 					A3BDF7AE1E64025BE21AEDB9 = {
+
 						ProvisioningStyle = Automatic;
 					};
 					C8A66AC95F905BBA7E1C67DF = {
+
 						ProvisioningStyle = Automatic;
 					};
 					DC8A97DBC72F83A308030086 = {
+
 						ProvisioningStyle = Automatic;
 						TestTargetID = 21E1F17B763B244487127E77;
 					};
@@ -614,6 +636,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA2AF5D03029FA5B6932A4EE /* AddSourceView.swift in Sources */,
 				B9588E04E6E0654619E02A09 /* AppModel.swift in Sources */,
 				D024EC6FBE23090EA668639B /* ChannelDetail.swift in Sources */,
 				D5CA35EC63395A312D89BF9F /* DownloadsView.swift in Sources */,
@@ -624,6 +647,7 @@
 				6184D2FA4FFBD8D199A3CE93 /* MobileFixtures.swift in Sources */,
 				A36DD00812ABF6183995B689 /* MobilePlayback.swift in Sources */,
 				D6FA6A50E62ED653E42685EC /* MobileWatchView.swift in Sources */,
+				ACF7CFCEA064B52906BEC2FD /* ProxySettingsView.swift in Sources */,
 				4D853531A70AFE1876A8FADE /* RootView.swift in Sources */,
 				9CBACFABBCC243A3DD1C7330 /* SearchView.swift in Sources */,
 				F59CAA3FD062F000D08CBF90 /* SettingsView.swift in Sources */,
@@ -638,6 +662,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FCA1FE70651CF8C957AF95AE /* AddSourceView.swift in Sources */,
 				18CF1B1A2F1CFEF4B9595E70 /* AppModel.swift in Sources */,
 				7179D914E14B1FAAC2812524 /* ChannelDetail.swift in Sources */,
 				2D6F5D4643E1F4B092EE9B2D /* DownloadsView.swift in Sources */,
@@ -648,6 +673,7 @@
 				B56CC35B17CCE3638AAE9972 /* MobileFixtures.swift in Sources */,
 				030FF5948F9702ABD07FB8D0 /* MobilePlayback.swift in Sources */,
 				C0E8C12D3393D5FE63A8B2C0 /* MobileWatchView.swift in Sources */,
+				5DAB7E84ACDF760D07CB1C84 /* ProxySettingsView.swift in Sources */,
 				C6153C4B7DC1EB827A31CBA5 /* RootView.swift in Sources */,
 				B2E314079A98483C948B333A /* SearchView.swift in Sources */,
 				1746FCA05D1DA2FC1EA3C4CF /* SettingsView.swift in Sources */,
@@ -670,6 +696,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1C019D7A11C402280000002 /* DiscordPresence.swift in Sources */,
+				86FAF92A849BE4D46CD57F53 /* AddSourceView.swift in Sources */,
 				8C28C55E0D3FB1806B5BFFF2 /* AppModel.swift in Sources */,
 				8CFC0C146828F8FAD08A4639 /* ChannelDetail.swift in Sources */,
 				3657F7765043B5F6F9532D40 /* DownloadsView.swift in Sources */,
@@ -680,6 +708,7 @@
 				A6D6AC440F0CF1E1D4B8C7E1 /* MobileFixtures.swift in Sources */,
 				79E400B2F33E2A66A1EFDD5B /* MobilePlayback.swift in Sources */,
 				E1CDB1C4CFC8B03933E156A1 /* MobileWatchView.swift in Sources */,
+				7248AAF61EFCFA1B15E24A3E /* ProxySettingsView.swift in Sources */,
 				17FE484EBB71C8615A2424ED /* RootView.swift in Sources */,
 				967EBD9B90E339ABDABD454C /* SearchView.swift in Sources */,
 				067DE5021F7E5EAADD22953D /* SettingsView.swift in Sources */,
@@ -728,7 +757,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyTVStorageTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyTVStorageTests";
 				PRODUCT_NAME = TwitchyTVStorageTests;
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -744,7 +773,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyiOSUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyiOSUITests";
 				PRODUCT_NAME = TwitchyiOSUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -762,7 +791,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-tvos";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-tvos";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
@@ -770,6 +799,7 @@
 		};
 		3D5C38CE4B740831FF97DCA4 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D1C019D7A11C402280000003 /* Twitchy.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -802,11 +832,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_ENTITLEMENTS = Apps/Shared/Twitchy.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(TWITCHY_CODE_SIGN_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -849,7 +880,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-tvos";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-tvos";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
 			};
@@ -869,7 +900,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-ios";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-ios";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -885,7 +916,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyUITests";
 				PRODUCT_NAME = TwitchyUITests;
 				SDKROOT = macosx;
 				TEST_TARGET_NAME = "Twitchy-macOS";
@@ -894,6 +925,7 @@
 		};
 		5B8E8384B74537D41A0D7660 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D1C019D7A11C402280000003 /* Twitchy.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -926,11 +958,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_ENTITLEMENTS = Apps/Shared/Twitchy.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(TWITCHY_CODE_SIGN_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -979,7 +1012,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyTVUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyTVUITests";
 				PRODUCT_NAME = TwitchyTVUITests;
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -997,7 +1030,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-macos";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-macos";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -1011,7 +1044,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyTVUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyTVUITests";
 				PRODUCT_NAME = TwitchyTVUITests;
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -1029,7 +1062,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyUITests";
 				PRODUCT_NAME = TwitchyUITests;
 				SDKROOT = macosx;
 				TEST_TARGET_NAME = "Twitchy-macOS";
@@ -1045,7 +1078,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyTVStorageTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyTVStorageTests";
 				PRODUCT_NAME = TwitchyTVStorageTests;
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -1061,7 +1094,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.example.TwitchyiOSUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).TwitchyiOSUITests";
 				PRODUCT_NAME = TwitchyiOSUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1083,7 +1116,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-ios";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-ios";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1099,7 +1132,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.example.twitchy-macos";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TWITCHY_BUNDLE_PREFIX).twitchy-macos";
 				SDKROOT = macosx;
 			};
 			name = Debug;

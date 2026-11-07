@@ -17,12 +17,12 @@ import Network
     #if DEBUG && os(tvOS) && targetEnvironment(simulator)
     let sources = StreamingSourceManager(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-sources-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: TVFixtures.sourceSecrets)
     #elseif DEBUG
-    let sources = StreamingSourceManager(url: ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" ? URL.temporaryDirectory.appendingPathComponent("sources-ui-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" ? SourceFixtureSecrets() as any SecretStore : KeychainStore(service: "com.rafaelreverberi.Twitchy.sources"))
+    let sources = StreamingSourceManager(url: (ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1") ? URL.temporaryDirectory.appendingPathComponent("sources-ui-" + UUID().uuidString + ".json") : TwitchyStoragePaths.directory.appendingPathComponent("sources.json"), secrets: ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" ? SourceFixtureSecrets() as any SecretStore : KeychainStore(service: "com.rafaelreverberi.Twitchy.sources"))
     #else
     let sources = StreamingSourceManager()
     #endif
     #if DEBUG && os(iOS) && targetEnvironment(simulator)
-    let personal = PersonalStore(url: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("Twitchy-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
+    let personal = PersonalStore(url: (MobileFixtures.enabled) ? URL.temporaryDirectory.appendingPathComponent("Twitchy-ui-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #elseif DEBUG && os(tvOS) && targetEnvironment(simulator)
     let personal = PersonalStore(url: TVFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("TV-personal-" + UUID().uuidString + ".json") : PersonalStore.defaultURL)
     #elseif DEBUG && os(macOS)
@@ -31,6 +31,15 @@ import Network
     let personal = PersonalStore()
     #endif
     let playback = PlaybackController()
+    @ObservationIgnored lazy var playbackResolver = PlaybackFallbackCoordinator(sources: sources)
+    var downloadSource: StreamingSource? {
+        let source = playback.hasMedia && playback.activeSourceID != nil ? sources.sources.first { $0.id == playback.activeSourceID } : sources.active
+        guard let source, source.enabled, source.playbackKind == .twitchyServer,
+              source.capabilities?.downloads == true, source.capabilities?.clientSideDownloads == true,
+              playback.activeSourceID == source.id || sources.availability[source.id] == true else { return nil }
+        return source
+    }
+    var canDownload: Bool { downloadSource != nil }
     let chat = ChatController()
     #if DEBUG && os(iOS) && targetEnvironment(simulator)
     let downloads = DownloadManager(directory: MobileFixtures.enabled ? URL.temporaryDirectory.appendingPathComponent("UI-downloads-" + UUID().uuidString) : TwitchyStoragePaths.directory.appendingPathComponent("Downloads"))
@@ -102,7 +111,7 @@ import Network
     func restoreLibrary() async {
         guard !networkOffline, !loading else { return }
         libraryUnavailable = false
-        if auth.session == nil { await auth.restore() }
+        if auth.session == nil { await auth.restore(explicitDeviceClientID: explicitDeviceClientID) }
         else { do { try await auth.validate() } catch { noteConnectionError(error) } }
         await refresh()
     }
@@ -117,7 +126,7 @@ import Network
         #if DEBUG && os(tvOS) && targetEnvironment(simulator)
         if TVFixtures.enabled { return CloudSyncStore(transport: nil, file: URL.temporaryDirectory.appendingPathComponent("TV-sync-" + UUID().uuidString), secrets: TVFixtureSecrets()) }
         #endif
-        return CloudSyncStore(transport: PrivateCloudTransport.isConfigured ? PrivateCloudTransport() : nil)
+        return CloudSyncStore(transport: PrivateCloudTransport())
     }
     @ObservationIgnored private var syncStarted = false
     @ObservationIgnored private var applyingOAuthSettings = false
@@ -138,7 +147,7 @@ import Network
     func sampleViewing() {
         let tick = ProcessInfo.processInfo.systemUptime, elapsed = tick - viewingTick
         viewingTick = tick
-        let playing = playback.player.timeControlStatus == .playing && playback.session != nil
+        let playing = playback.player.timeControlStatus == .playing && playback.hasMedia
         defer { wasPlaying = playing }
         if viewing == nil, playing, let login = viewingLogin {
             viewing = WatchSession(login: login); wasPlaying = false
@@ -162,6 +171,20 @@ import Network
         } catch { /* Discovery remains usable when the personalized request fails. */ }
     }
     #if os(macOS)
+    @ObservationIgnored let discordPresence = DiscordPresence()
+    var desktopAvatarURL: URL?
+    var discordViewing: DiscordPresence.Viewing? {
+        guard !isOfflinePlayback, let active = nowPlaying else { return nil }
+        let selection = active.selection
+        let request = playback.currentRequest
+        let matchesSelection = request?.contentType == selection.contentType && (
+            selection.contentType == "live" ? request?.channelLogin == selection.login : request?.contentId == selection.contentID
+        )
+        let streamTitle = active.title == selection.name ? nil : active.title
+        let sourceTitle = matchesSelection ? playback.session?.title : nil
+        return .init(id: selection.id, channel: selection.name, title: streamTitle ?? sourceTitle, avatarURL: desktopAvatarURL,
+                     playing: matchesSelection && playback.hasMedia && playback.state == .playing && !playback.isPaused)
+    }
     var nowPlaying: DesktopNowPlaying?
     var desktopFullscreen = false
     var desktopTheater = false
@@ -179,6 +202,7 @@ import Network
         desktopPlaybackTask?.cancel(); desktopRetryTask?.cancel(); desktopRetryAttempt = 0
         var active = selection
         active.contentType = type; active.contentID = contentID; active.returnToPlayback = true
+        desktopAvatarURL = nil
         nowPlaying = DesktopNowPlaying(selection: active, title: title ?? selection.name, thumbnail: thumbnail)
         error = nil
         desktopPlaybackTask = Task {
@@ -186,6 +210,12 @@ import Network
             guard !Task.isCancelled else { return }
             if type != "live", selection.resumePosition > 0 {
                 await playback.player.seek(to: CMTime(seconds: selection.resumePosition, preferredTimescale: 600))
+            }
+            if type == "live", title == nil, let api,
+               let page = try? await api.streams(login: selection.login),
+               let streamTitle = page.data.first?.title,
+               !Task.isCancelled, nowPlaying?.id == active.id {
+                nowPlaying?.title = streamTitle
             }
         }
     }
@@ -201,20 +231,25 @@ import Network
         }
     }
     func retryDesktopPlaybackIfNeeded() {
-        guard !isOfflinePlayback, nowPlaying != nil, personal.data.preferences.retryPlayback, desktopRetryAttempt < 2 else { return }
+        guard !playback.managesRecovery, !isOfflinePlayback, nowPlaying != nil, playback.failureIsRetryable, personal.data.preferences.retryPlayback, desktopRetryAttempt < 2 else { return }
         desktopRetryAttempt += 1
         let delay = desktopRetryAttempt * 2
         desktopRetryTask = Task {
-            do { try await Task.sleep(for: .seconds(delay)); try Task.checkCancellation(); await playback.retry() }
+            do { try await Task.sleep(for: .seconds(delay)); try Task.checkCancellation(); await playback.retry(automatic: true) }
             catch { }
         }
+    }
+    func toggleDesktopFullscreen() {
+        guard let window = desktopPlayerSurface.view.window else { return }
+        desktopFullscreen = !window.styleMask.contains(.fullScreen); window.toggleFullScreen(nil)
     }
     func stopDesktopPlayback() {
         sampleViewing(); saveDesktopPosition(); desktopPlaybackTask?.cancel(); desktopPlaybackTask = nil; desktopRetryTask?.cancel(); desktopRetryTask = nil
         desktopPlayerSurface.stopPiP()
-        if desktopFullscreen { desktopPlayerSurface.view.window?.toggleFullScreen(nil); desktopFullscreen = false }
+        if desktopFullscreen { (desktopPlayerSurface.view.window)?.toggleFullScreen(nil); desktopFullscreen = false }
         desktopTheater = false
         nowPlaying = nil; offlineDownload = nil; playback.player.pause(); chat.disconnect()
+        discordPresence.stopWatching()
         Task { await playback.stop() }
     }
     #endif
@@ -237,6 +272,7 @@ import Network
         let channel = ChannelSelection(login: (item.metadata?.channel ?? "offline").lowercased(), name: item.metadata?.channel ?? "Downloads", contentType: item.contentType, contentID: item.contentID, returnToPlayback: true, offlineDownloadID: item.id)
         #if os(macOS)
         saveDesktopPosition(); desktopPlaybackTask?.cancel(); desktopRetryTask?.cancel()
+        desktopAvatarURL = nil
         nowPlaying = .init(selection: channel, title: item.displayTitle, thumbnail: downloads.thumbnailFile(for: item) ?? item.metadata?.thumbnailURL)
         selectedChannel = channel
         desktopPlaybackTask = Task { await playback.startOffline(url: url, type: item.contentType, contentID: item.contentID, expectedDuration: item.metadata?.expectedDuration) }
@@ -244,18 +280,45 @@ import Network
         mobile.startOffline(channel, item: item, url: url)
         #endif
     }
-    var clientID = UserDefaults.standard.string(forKey: "oauth.clientID") ?? "" { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID"); saveOAuthSettings() } }
-    var deviceClientID = UserDefaults.standard.string(forKey: "oauth.deviceClientID").flatMap { $0.isEmpty ? nil : $0 } ?? "" { didSet { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID"); saveOAuthSettings() } }
-    var redirect = UserDefaults.standard.string(forKey: "oauth.redirect").flatMap { $0.isEmpty ? nil : $0 } ?? "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html" { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect"); saveOAuthSettings() } }
+    static let twitchCallback = "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html"
+
+    private static func savedClientID(forKey key: String) -> String {
+        let id = OAuthAppSettings.usableClientID(UserDefaults.standard.string(forKey: key) ?? "")
+        return OAuthAppSettings.isFormerBundledClientID(id) ? "" : id
+    }
+
+    @ObservationIgnored private var deviceClientIDWasEntered = false
+    var clientID = AppModel.savedClientID(forKey: "oauth.clientID") { didSet { UserDefaults.standard.set(clientID, forKey: "oauth.clientID"); saveOAuthSettings() } }
+    var deviceClientID = AppModel.savedClientID(forKey: "oauth.deviceClientID") {
+        didSet {
+            if !isDiscoveryFixture { UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID") }
+            saveOAuthSettings()
+        }
+    }
+    var redirect = UserDefaults.standard.string(forKey: "oauth.redirect").flatMap { $0.isEmpty ? nil : $0 } ?? AppModel.twitchCallback { didSet { UserDefaults.standard.set(redirect, forKey: "oauth.redirect"); saveOAuthSettings() } }
     private func saveOAuthSettings() {
         guard !applyingOAuthSettings else { return }
-        personal.data.oauthSettings = .init(clientID: clientID, deviceClientID: deviceClientID, redirect: redirect)
+        personal.data.oauthSettings = OAuthAppSettings(clientID: clientID, deviceClientID: deviceClientID, redirect: redirect, deviceClientIDWasEntered: deviceClientIDWasEntered ? true : nil).usingOwnRegistration
     }
     func applyOAuthSettings() {
-        guard let settings = personal.data.oauthSettings else { return }
+        let settings = personal.data.oauthSettings?.usingOwnRegistration
         applyingOAuthSettings = true; defer { applyingOAuthSettings = false }
-        clientID = settings.clientID; deviceClientID = settings.deviceClientID; redirect = settings.redirect
+        deviceClientIDWasEntered = settings?.deviceClientIDWasEntered == true
+        clientID = settings?.clientID ?? ""
+        deviceClientID = settings?.deviceClientID ?? ""
+        if let settings { redirect = settings.redirect }
     }
+    private var explicitDeviceClientID: String? { deviceClientIDWasEntered ? deviceClientID : nil }
+    var hasTwitchRegistration: Bool { !configuration.deviceClientID.isEmpty }
+    var twitchConnectTitle: String { hasTwitchRegistration ? "Sign in with Twitch" : "Set Up Twitch Connection" }
+
+    func saveTwitchRegistration(_ input: String) {
+        let id = OAuthAppSettings.usableClientID(input)
+        guard !id.isEmpty else { return }
+        deviceClientIDWasEntered = true
+        deviceClientID = id
+    }
+
     private var cachedAPI: TwitchAPIClient?
     private var cachedToken: String?
     var api: TwitchAPIClient? {
@@ -263,13 +326,14 @@ import Network
         if cachedToken != session.accessToken { cachedAPI = TwitchAPIClient(clientID: session.clientID, token: session.accessToken); cachedToken = session.accessToken }
         return cachedAPI
     }
-    var configuration: OAuthConfiguration { .init(clientID: clientID, redirectURI: URL(string: redirect) ?? URL(string: "https://rafaelreverberi.github.io/Twitchy/oauth-callback.html")!, deviceClientID: deviceClientID) }
+    var configuration: OAuthConfiguration { .init(clientID: OAuthAppSettings.usableClientID(clientID), redirectURI: URL(string: redirect) ?? URL(string: Self.twitchCallback)!, deviceClientID: OAuthAppSettings.usableClientID(deviceClientID)) }
     func startup() async {
         startConnectivityMonitoring()
         defer { startupComplete = true }
         #if DEBUG
         if ProcessInfo.processInfo.environment["TWITCHY_UI_SOURCES_FIXTURE"] == "1" {
             personal.data.onboardingComplete = true
+            personal.data.preferences.reduceMotion = true // Keep source-order UI fixtures deterministic.
             try? sources.upsert(.init(name: "Primary", baseURL: URL(string: "http://127.0.0.1:18181")!, allowLocalHTTP: true))
             try? sources.upsert(.init(name: "Backup", baseURL: URL(string: "http://127.0.0.1:18182")!, allowLocalHTTP: true))
             showingSettings = true
@@ -279,7 +343,18 @@ import Network
             personal.data.onboardingComplete = true
             networkOffline = fixture == "offline"
             if networkOffline {
-                await auth.restore(validateOnline: false)
+                // Move the preceding Advanced-only custom proxy into the explicit source list once.
+        if let legacy = personal.data.proxyConfiguration, legacy.useCustom, !legacy.address.isEmpty {
+            do {
+                let id = UUID(uuidString: "532C91A1-9BBC-4A20-A42D-A6A83E61C888")!
+                if !sources.sources.contains(where: { $0.id == id }) {
+                    var source = try StreamingSource.proxy(name: legacy.name, configuration: legacy, id: id)
+                    source.enabled = legacy.enabled; try sources.upsert(source)
+                }
+                personal.data.proxyConfiguration = nil
+            } catch { self.error = "The previous proxy could not be migrated. Add it again in Sources." }
+        }
+        await auth.restore(validateOnline: false)
                 user = try? JSONCoding.decoder().decode(TwitchUser.self, from: Data(#"{"id":"fixture-account","login":"offlineviewer","display_name":"Offline viewer","profile_image_url":"","description":""}"#.utf8))
             } else { try? await Task.sleep(for: .seconds(20)) }
             return
@@ -327,16 +402,34 @@ import Network
             return
         }
         #endif
-        playback.resolveClient = { [weak self] request, failedID in
+        playback.recoveryEnabled = { [weak self] in self?.personal.data.preferences.retryPlayback == true }
+        playback.recoveryLimit = { [weak self] in (self?.sources.sources.filter(\.enabled).count ?? 0) + 1 }
+        playback.resolvePlayback = { [weak self] request, failedIDs, _ in
             guard let self else { throw CancellationError() }
-            return try await sources.readyClient(for: request, failedSourceID: failedID)
+            return try await playbackResolver.resolveOrdered(request, excluding: failedIDs)
         }
         if !syncStarted {
             syncStarted = true
+            if let saved = personal.data.oauthSettings {
+                personal.data.oauthSettings = saved.usingOwnRegistration
+            }
             if personal.data.oauthSettings == nil { saveOAuthSettings() }
+            UserDefaults.standard.set(clientID, forKey: "oauth.clientID")
+            UserDefaults.standard.set(deviceClientID, forKey: "oauth.deviceClientID")
             do { try sync.start(); applyOAuthSettings() } catch { self.error = "Local sync data could not be applied." }
         }
-        await auth.restore(validateOnline: false)
+        // Move the preceding Advanced-only custom proxy into the explicit source list once.
+        if let legacy = personal.data.proxyConfiguration, legacy.useCustom, !legacy.address.isEmpty {
+            do {
+                let id = UUID(uuidString: "532C91A1-9BBC-4A20-A42D-A6A83E61C888")!
+                if !sources.sources.contains(where: { $0.id == id }) {
+                    var source = try StreamingSource.proxy(name: legacy.name, configuration: legacy, id: id)
+                    source.enabled = legacy.enabled; try sources.upsert(source)
+                }
+                personal.data.proxyConfiguration = nil
+            } catch { self.error = "The previous proxy could not be migrated. Add it again in Sources." }
+        }
+        await auth.restore(validateOnline: false, explicitDeviceClientID: explicitDeviceClientID)
         if let session = auth.session, !isDiscoveryFixture { user = accountCache.load(userID: session.userID) }
         if !networkOffline {
             do { try await auth.validate() } catch { noteConnectionError(error) }
@@ -347,8 +440,8 @@ import Network
             pendingReconnect = false
             await restoreLibrary()
         }
-        await sync.sync()
         Task { await sources.refreshAvailability() }
+        await sync.sync()
     }
     func login(chat: Bool = false, presentSettings: Bool = true) async {
         guard !auth.isSigningIn else {
@@ -360,6 +453,7 @@ import Network
         #if !os(tvOS)
         if presentSettings { showingSettings = true }
         #endif
+        guard hasTwitchRegistration else { return }
         await auth.login(configuration: configuration, chat: chat)
         #if os(macOS)
         if let value = auth.deviceCode?.verificationUri, let url = URL(string: value), url.scheme == "https", url.host == "www.twitch.tv" || url.host == "twitch.tv" { NSWorkspace.shared.open(url) }
@@ -431,21 +525,21 @@ import Network
         guard !Task.isCancelled else { return }
         #endif
         do {
-            sampleViewing()
-            let client: StreamingSourceClient
+            sampleViewing(); self.error = nil
+            let client: StreamingSourceClient?
             #if DEBUG && os(iOS) && targetEnvironment(simulator)
             if ProcessInfo.processInfo.environment["TWITCHY_UI_PLAYBACK_FIXTURE"] == "1" {
                 client = try StreamingSourceClient(source: .init(name: "Local fixture", baseURL: URL(string: "http://localhost:8181")!, allowLocalHTTP: true))
-            } else { client = try sources.client() }
+            } else { client = playback.managesRecovery ? nil : try sources.client() }
             #else
-            client = try sources.client()
+            client = playback.managesRecovery ? nil : try sources.client()
             #endif
             viewing = nil; viewingLogin = selection.login; wasPlaying = false; viewingTick = ProcessInfo.processInfo.systemUptime
             await playback.start(client: client, request: .init(contentType: contentType, channelLogin: contentType == "live" ? selection.login : nil, contentId: contentID, requestedQuality: qualityOverride ?? personal.data.preferences.preferredQuality))
             #if os(iOS)
             guard !Task.isCancelled else { return }
             #endif
-            if playback.session != nil {
+            if playback.hasMedia {
                 personal.watched(.init(login: selection.login, title: selection.name, contentType: contentType, contentID: contentID))
                 if viewing == nil { viewing = WatchSession(login: selection.login) }
                 viewingTick = ProcessInfo.processInfo.systemUptime

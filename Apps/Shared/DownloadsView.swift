@@ -28,6 +28,7 @@ struct DownloadsView: View {
                 #if os(tvOS)
                 EmptyState("Downloads unavailable on Apple TV", detail: "Use Twitchy on iPhone, iPad or Mac to watch downloaded videos.", symbol: "arrow.down.circle")
                 #else
+                if !model.canDownload { Label("New downloads require an active Twitchy Server connection. Proxy sources support live playback. Saved videos remain available offline.", systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("downloads.requiresServer") }
                 if model.downloads.items.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "arrow.down.circle").font(.system(size: 48, weight: .light)).foregroundStyle(TwitchyTheme.accent)

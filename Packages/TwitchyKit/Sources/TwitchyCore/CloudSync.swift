@@ -25,15 +25,20 @@ public protocol CloudSyncTransport: Sendable {
 }
 
 public actor PrivateCloudTransport: CloudSyncTransport {
-    public static let containerID = "iCloud.org.example.twitchy"
+    private nonisolated static var containerID: String? {
+        guard let id = Bundle.main.object(forInfoDictionaryKey: "TwitchyCloudContainer") as? String,
+              id.hasPrefix("iCloud.") else { return nil }
+        return id
+    }
     private let container: CKContainer
     private let database: CKDatabase
     private let zoneID = CKRecordZone.ID(zoneName: "TwitchyPersonal")
     private var ready = false
     private var changeToken: CKServerChangeToken?
     private var fetchedValues: [String: SyncValue] = [:]
-    public init() {
-        let container = CKContainer(identifier: Self.containerID)
+    public init?() {
+        guard let id = Self.containerID, Self.isConfigured else { return nil }
+        let container = CKContainer(identifier: id)
         self.container = container; database = container.privateCloudDatabase
     }
     public func accountID() async throws -> String {
@@ -77,6 +82,7 @@ public actor PrivateCloudTransport: CloudSyncTransport {
     }
     /// CloudKit throws an Objective-C exception for an unsigned executable without its entitlement.
     public nonisolated static var isConfigured: Bool {
+        guard let containerID else { return false }
         #if targetEnvironment(simulator)
         return false
         #elseif os(macOS)
@@ -90,7 +96,7 @@ public actor PrivateCloudTransport: CloudSyncTransport {
               let containers = entitlements["com.apple.developer.icloud-container-identifiers"] as? [String] else { return false }
         return containers.contains(containerID)
         #else
-        return Bundle.main.object(forInfoDictionaryKey: "TwitchyCloudEnabled") as? Bool == true
+        return true
         #endif
     }
 }

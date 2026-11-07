@@ -9,7 +9,9 @@ Sources checked against official documentation on 2026-10-10:
 
 ## Default sign-in: all platforms
 
-Twitchy defaults to public Device Code Flow. The bundled public Client ID is ``; its owner confirmed **Client Type: Public** in the Twitch Developer Console on 2026-10-10. If Twitch prevents changing an existing Confidential registration, create a Public registration and enter that ID under Settings → Advanced → Twitch application settings. Never put a client secret in the app, GitHub repository, or Pages HTML.
+Open **Set Up Twitch Connection** and register your own application in the [Twitch Developer Console](https://dev.twitch.tv/console/apps). Enable two-factor authentication, choose a unique application name, select **Application Integration** and set **Client Type** to **Public**. In **OAuth Redirect URLs**, add `https://rafaelreverberi.github.io/Twitchy/oauth-callback.html`. The setup wizard gives you a copy button on Mac, iPhone and iPad, and a QR code on Apple TV. Sign-in uses Twitch’s device activation page.
+
+Open **Manage**, copy the public **Client ID** and save it in Twitchy. Twitch prohibits sharing a Client ID across different applications. Twitchy uses your own registration. The Client ID syncs through private iCloud on provisioned builds, including Apple TV. Authorize Twitch on each device. OAuth access and refresh tokens stay in the local Keychain.
 
 Choose **Sign in with Twitch**. On Mac, iPhone, and iPad, Twitchy opens Twitch's activation URL in the default browser, including the activation code supplied by Twitch. Confirm the requested permissions there; Twitchy completes sign-in automatically. Settings shows a Continue on Twitch link and the code as a fallback. On Apple TV, use that URL/code on another device. Cancellation stops polling. Existing browser sessions can be used rather than forcing a fresh credential entry.
 

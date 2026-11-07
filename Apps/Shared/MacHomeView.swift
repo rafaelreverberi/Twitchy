@@ -303,6 +303,7 @@ struct DesktopWatchPlayer: View {
                 })
                 .padding(.bottom, model.playback.currentRequest?.contentType == "live" ? 54 : 90)
         }
+        .overlay(alignment: .top) { PlaybackProviderNotice().padding(.top, 12) }
         .foregroundStyle(.white).tint(.white)
         .onContinuousHover { phase in
             switch phase {
@@ -332,10 +333,12 @@ struct DesktopWatchPlayer: View {
             Spacer(minLength: 4)
             Menu {
                 Text("Quality · \(model.playback.qualityLabel)")
+                if let name = model.playback.providerName { Text("Provider · " + name) }
+                if let notice = model.playback.fallbackNotice { Text(notice) }
                 Button { Task { await model.playback.changeQuality("auto") } } label: {
                     Label("Best · Auto", systemImage: model.playback.quality == "auto" ? "checkmark" : "")
                 }
-                ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { quality in
+                ForEach(model.playback.qualities.filter { $0 != "auto" }, id: \.self) { quality in
                     Button { Task { await model.playback.changeQuality(quality) } } label: {
                         Label(quality, systemImage: model.playback.quality == quality ? "checkmark" : "")
                     }
@@ -360,9 +363,7 @@ struct DesktopWatchPlayer: View {
         .onHover { controlsHovered = $0; revealControls() }
     }
     private func toggleFullscreen() {
-        guard let window = model.desktopPlayerSurface.view.window else { return }
-        model.desktopFullscreen.toggle()
-        window.toggleFullScreen(nil)
+        model.toggleDesktopFullscreen()
     }
     private func revealControls() { controlsVisible = true; lastMovement = .now }
     private func control(_ symbol: String, _ label: String, _ identifier: String, action: @escaping () -> Void) -> some View {
@@ -392,7 +393,7 @@ struct DesktopPlaybackTimeline: View {
                     Text(timestamp(duration))
                 }.font(.caption.monospacedDigit())
             }
-        }.onChange(of: model.playback.session?.sessionId) { _, _ in scrub = nil }
+        }.onChange(of: model.playback.playbackID) { _, _ in scrub = nil }
     }
     private func timestamp(_ seconds: Double) -> String {
         let value = Int(max(0, seconds))
@@ -402,13 +403,12 @@ struct DesktopPlaybackTimeline: View {
 
 struct DesktopNowPlayingView: View {
     @Environment(AppModel.self) private var model
-    @State private var avatarURL: URL?
     var body: some View {
         if let active = model.nowPlaying {
             HStack(spacing: 8) {
                 Button { model.reopenDesktopPlayback() } label: {
                     HStack(spacing: 8) {
-                        DiscoveryImage(avatarURL, symbol: "person.crop.circle")
+                        DiscoveryImage(model.desktopAvatarURL, symbol: "person.crop.circle")
                             .frame(width: 32, height: 32).clipShape(Circle())
                         Text(active.selection.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,16 +429,18 @@ struct DesktopNowPlayingView: View {
                 .accessibilityElement(children: .contain).accessibilityLabel("Now Playing")
                 .contextMenu {
                     Button("Open stream") { model.reopenDesktopPlayback() }
+                    Button("Settings") { model.showingSettings = true }
                     Button("Stop stream", systemImage: "stop.fill") { model.stopDesktopPlayback() }
                     if model.playback.error != nil { Button("Retry playback") { Task { await model.playback.retry() } } }
                 }
-                .task(id: active.selection.login) {
-                    avatarURL = active.selection.broadcasterID.flatMap { model.avatars[$0] }
-                    guard avatarURL == nil, let api = model.api else { return }
+                .task(id: active.selection.id) {
+                    model.desktopAvatarURL = active.selection.broadcasterID.flatMap { model.avatars[$0] }
+                    guard model.desktopAvatarURL == nil, let api = model.api else { return }
                     do {
                         let profile = try await api.users(logins: [active.selection.login]).data.first
                         try Task.checkCancellation()
-                        avatarURL = profile.flatMap { URL(string: $0.profileImageUrl) }
+                        guard model.nowPlaying?.selection.id == active.selection.id else { return }
+                        model.desktopAvatarURL = profile.flatMap { URL(string: $0.profileImageUrl) }
                     } catch { }
                 }
         }

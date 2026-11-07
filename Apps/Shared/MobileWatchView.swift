@@ -3,6 +3,7 @@ import SwiftUI
 import AVKit
 import TwitchyDesignSystem
 import TwitchyPlayback
+import TwitchyCore
 
 struct MobilePlaybackOverlay: View {
     @Environment(AppModel.self) private var model
@@ -11,6 +12,7 @@ struct MobilePlaybackOverlay: View {
     @State private var panel = "Chat"
     @State private var downloadNotice: String?
     @State private var preparingDownload = false
+    @State private var showingProxySettings = false
     var body: some View {
         let mobile = model.mobile
         GeometryReader { geometry in
@@ -27,7 +29,7 @@ struct MobilePlaybackOverlay: View {
                     miniPlayer.frame(width: geometry.size.width - 16, height: 66)
                         .position(x: geometry.size.width / 2, y: videoCenter.y)
                 }
-                // This UIView and AVPlayerLayer stay mounted for the lifetime of the root.
+                // This UIView and AVPlayerLayer stay mounted for native HLS playback.
                 MobileVideoSurface(surface: mobile.surface)
                     .frame(width: videoSize.width, height: videoSize.height)
                     .background(.black).clipShape(RoundedRectangle(cornerRadius: expanded ? 0 : 8))
@@ -60,6 +62,11 @@ struct MobilePlaybackOverlay: View {
         .alert("Download", isPresented: Binding(get: { downloadNotice != nil }, set: { if !$0 { downloadNotice = nil } })) {
             Button("OK") { downloadNotice = nil }
         } message: { Text(downloadNotice ?? "") }
+        .sheet(isPresented: $showingProxySettings) {
+            NavigationStack {
+                ProxySettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingProxySettings = false } } }
+            }
+        }
         .task(id: mobile.identity) { await mobile.loadWatchingProfile() }
         .onChange(of: mobile.identity) { _, _ in controlsVisible = true; panel = model.personal.data.preferences.showChat ? "Chat" : "Details" }
         .onChange(of: mobile.presentation) { _, _ in controlsVisible = true }
@@ -72,13 +79,19 @@ struct MobilePlaybackOverlay: View {
     private var playbackIdentity: String {
         #if DEBUG && targetEnvironment(simulator)
         if MobileFixtures.enabled {
-            return model.playback.state.rawValue + "|" + (model.playback.session?.sessionId ?? "none") + "|" + model.mobile.surfaceID + "|" + (model.playback.player.currentItem.map { String(ObjectIdentifier($0).hashValue) } ?? "none") + "|" + (model.playback.pictureInPictureActive ? "pip" : "inline") + "|" + String(model.mobile.pipActivationCount) + "|" + (model.mobile.pipPossible ? "possible" : "unavailable") + "|" + (AVPictureInPictureController.isPictureInPictureSupported() ? "supported" : "unsupported")
+            return model.playback.state.rawValue + "|" + (model.playback.playbackID ?? "none") + "|" + model.mobile.surfaceID + "|" + (model.playback.player.currentItem.map { String(ObjectIdentifier($0).hashValue) } ?? "none") + "|" + (model.playback.pictureInPictureActive ? "pip" : "inline") + "|" + String(model.mobile.pipActivationCount) + "|" + (model.mobile.pipPossible ? "possible" : "unavailable") + "|" + (AVPictureInPictureController.isPictureInPictureSupported() ? "supported" : "unsupported")
         }
         #endif
         return model.playback.state.rawValue
     }
     private func videoOverlay(size: CGSize) -> some View {
         ZStack {
+            if model.mobile.isComposing {
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { model.mobile.isComposing = false }
+                    .zIndex(2)
+            }
+            VStack { PlaybackProviderNotice().padding(.top, 50); Spacer() }.zIndex(1).allowsHitTesting(false)
             if model.playback.pictureInPictureActive {
                 VStack(spacing: 8) { Image(systemName: "pip.fill").font(.title); Text("Playing in Picture in Picture").font(.subheadline) }
                     .foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
@@ -96,8 +109,10 @@ struct MobilePlaybackOverlay: View {
                         }
                         AirPlayPicker().frame(width: 44, height: 44).accessibilityLabel("AirPlay")
                         Menu {
+                            if let name = model.playback.providerName { Text("Provider · " + name) }
+                            if let notice = model.playback.fallbackNotice { Text(notice) }
                             Button("Best") { model.mobile.changeQuality("auto") }
-                            ForEach(model.playback.session?.qualities.filter { $0 != "auto" } ?? [], id: \.self) { quality in Button(quality) { model.mobile.changeQuality(quality) } }
+                            ForEach(model.playback.qualities.filter { $0 != "auto" }, id: \.self) { quality in Button(quality) { model.mobile.changeQuality(quality) } }
                             Button(model.playback.isMuted ? "Unmute" : "Mute", systemImage: model.playback.isMuted ? "speaker.wave.2" : "speaker.slash") { model.playback.toggleMute() }
                         } label: { Image(systemName: "gearshape").frame(width: 44, height: 44) }.accessibilityLabel("Playback options")
                     }
@@ -136,6 +151,7 @@ struct MobilePlaybackOverlay: View {
             VStack(spacing: 10) {
                 Text(model.playback.state == .unavailable ? "Stream unavailable" : "Couldn’t start playback").font(.headline)
                 Text(failure).font(.caption).multilineTextAlignment(.center).lineLimit(3)
+                Button("Sources") { showingProxySettings = true }
                 Button("Retry") { model.mobile.retry() }.buttonStyle(.bordered).accessibilityIdentifier("watch.retry")
             }.padding(.horizontal, 20)
 
@@ -185,7 +201,8 @@ struct MobilePlaybackOverlay: View {
                        type == "vod" || type == "clip" {
                         Button("Download", systemImage: "arrow.down.circle") {
                             download(type: type, id: id)
-                        }.disabled(preparingDownload).accessibilityIdentifier("watch.download")
+                        }.disabled(preparingDownload || !model.canDownload).accessibilityIdentifier("watch.download")
+                        if !model.canDownload { Text("Downloads require an active Twitchy Server connection.") }
                     }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 20, weight: .semibold)).frame(width: 44, height: 44) }
                     .accessibilityLabel("Stream options").accessibilityIdentifier("watch.options")
@@ -199,7 +216,8 @@ struct MobilePlaybackOverlay: View {
         Task {
             defer { preparingDownload = false }
             do {
-                let client = try model.sources.client()
+                guard let source = model.downloadSource else { throw TwitchyCore.ClientError.message("Downloads require an active Twitchy Server connection.") }
+                let client = try model.sources.client(for: source)
                 let capabilities = try await client.capabilities()
                 guard capabilities.downloads, capabilities.clientSideDownloads == true else {
                     downloadNotice = "Your streaming source does not support downloads for this content."

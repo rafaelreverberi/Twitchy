@@ -7,7 +7,7 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>TwitchyCloudEnabled</key>
-	<true/>
+	<key>TwitchyCloudContainer</key>
+	<string>$(TWITCHY_CLOUD_CONTAINER)</string>
 </dict>
 </plist>
