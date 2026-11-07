@@ -433,13 +433,13 @@ struct DesktopNowPlayingView: View {
                     Button("Stop stream", systemImage: "stop.fill") { model.stopDesktopPlayback() }
                     if model.playback.error != nil { Button("Retry playback") { Task { await model.playback.retry() } } }
                 }
-                .task(id: active.selection.id) {
+                .task(id: active.id) {
                     model.desktopAvatarURL = active.selection.broadcasterID.flatMap { model.avatars[$0] }
                     guard model.desktopAvatarURL == nil, let api = model.api else { return }
                     do {
                         let profile = try await api.users(logins: [active.selection.login]).data.first
                         try Task.checkCancellation()
-                        guard model.nowPlaying?.selection.id == active.selection.id else { return }
+                        guard model.nowPlaying?.id == active.id else { return }
                         model.desktopAvatarURL = profile.flatMap { URL(string: $0.profileImageUrl) }
                     } catch { }
                 }

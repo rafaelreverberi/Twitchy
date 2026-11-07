@@ -182,7 +182,9 @@ import Network
         )
         let streamTitle = active.title == selection.name ? nil : active.title
         let sourceTitle = matchesSelection ? playback.session?.title : nil
-        return .init(id: selection.id, channel: selection.name, channelLogin: selection.login, title: streamTitle ?? sourceTitle, avatarURL: desktopAvatarURL,
+        let recordingKind = selection.contentType == "clip" ? "Clip" : selection.contentType == "vod" ? "VOD" : nil
+        return .init(id: active.id, channel: selection.name, channelLogin: selection.login, title: streamTitle ?? sourceTitle,
+                     recordingKind: recordingKind, avatarURL: desktopAvatarURL,
                      playing: matchesSelection && playback.hasMedia && playback.state == .playing && !playback.isPaused)
     }
     var nowPlaying: DesktopNowPlaying?
@@ -203,7 +205,8 @@ import Network
         var active = selection
         active.contentType = type; active.contentID = contentID; active.returnToPlayback = true
         desktopAvatarURL = nil
-        nowPlaying = DesktopNowPlaying(selection: active, title: title ?? selection.name, thumbnail: thumbnail)
+        let presentation = DesktopNowPlaying(selection: active, title: title ?? selection.name, thumbnail: thumbnail)
+        nowPlaying = presentation
         error = nil
         desktopPlaybackTask = Task {
             await play(selection, contentType: type, contentID: contentID)
@@ -214,7 +217,7 @@ import Network
             if type == "live", title == nil, let api,
                let page = try? await api.streams(login: selection.login),
                let streamTitle = page.data.first?.title,
-               !Task.isCancelled, nowPlaying?.id == active.id {
+               !Task.isCancelled, nowPlaying?.id == presentation.id {
                 nowPlaying?.title = streamTitle
             }
         }
@@ -557,7 +560,7 @@ struct ChannelSelection: Identifiable { let id = UUID(); var login: String; var 
 
 #if os(macOS)
 struct DesktopNowPlaying: Identifiable {
-    var id: UUID { selection.id }
+    let id = UUID()
     var selection: ChannelSelection
     var title: String
     var thumbnail: URL?

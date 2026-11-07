@@ -12,10 +12,20 @@ import Network
         let channel: String
         let channelLogin: String
         let title: String?
+        let recordingKind: String?
         let avatarURL: URL?
         let playing: Bool
     }
 
+    struct Progress {
+        let position: TimeInterval
+        let duration: TimeInterval
+    }
+
+    private var endTimestamp: Int64?
+    private var publishedEndTimestamp: Int64?
+    private var desiredRecordingKind: String?
+    private var publishedRecordingKind: String?
     private var viewingID: UUID?
     private var accumulated: TimeInterval = 0
     private var playingSince: TimeInterval?
@@ -38,7 +48,7 @@ import Network
     private var handshakeDeadline: TimeInterval = 0
     private var nextSocket = 0
 
-    func update(enabled: Bool, applicationID: String, viewing: Viewing?) {
+    func update(enabled: Bool, applicationID: String, viewing: Viewing?, progress: Progress? = nil) {
         let id = applicationID.trimmingCharacters(in: .whitespacesAndNewlines)
         let configuredID = enabled && UInt64(id).map({ $0 > 0 }) == true ? id : ""
         let now = ProcessInfo.processInfo.systemUptime
@@ -52,6 +62,7 @@ import Network
         if viewingID != viewing?.id {
             viewingID = viewing?.id
             accumulated = 0
+            endTimestamp = nil
             playingSince = nil
             interruptedAt = nil
         }
@@ -60,6 +71,19 @@ import Network
             if playingSince == nil {
                 playingSince = now
                 timestamp = Int64(Date.now.timeIntervalSince1970 - accumulated)
+                endTimestamp = nil
+            }
+            if viewing.recordingKind != nil, let progress,
+               progress.position.isFinite, progress.duration > 0, progress.duration < Double(Int32.max) {
+                let position = min(max(progress.position, 0), progress.duration)
+                let now = Date.now.timeIntervalSince1970
+                let start = Int64(now - position)
+                let end = max(start + 1, Int64(now - position + progress.duration))
+                // Let Discord advance the bar. Resend only when a seek, stall or duration change shifts it.
+                if endTimestamp == nil || abs(start - timestamp) > 1 || abs(end - (endTimestamp ?? end)) > 1 {
+                    timestamp = start
+                    endTimestamp = end
+                }
             }
         } else if let playingSince {
             // AVPlayer may briefly report a pause while switching segments or recovering.
@@ -72,6 +96,7 @@ import Network
         }
         let visible = configuredID.isEmpty || playingSince == nil ? nil : viewing
         desiredChannel = visible?.channel
+        desiredRecordingKind = visible?.recordingKind
         desiredTitle = visible?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         if desiredTitle?.count ?? 0 < 2 { desiredTitle = nil }
         desiredAvatar = visible?.avatarURL
@@ -132,13 +157,16 @@ import Network
         ready = false
         publishedChannel = nil
         publishedTitle = nil
+        publishedRecordingKind = nil
+        publishedEndTimestamp = nil
         publishedAvatar = nil
         publishedChannelURL = nil
     }
 
     private func publish() {
         guard let connection, publishedChannel != desiredChannel || publishedTitle != desiredTitle || publishedAvatar != desiredAvatar ||
-              publishedChannelURL != desiredChannelURL || (desiredChannel != nil && publishedTimestamp != timestamp) else { return }
+              publishedChannelURL != desiredChannelURL || publishedRecordingKind != desiredRecordingKind ||
+              (desiredChannel != nil && (publishedTimestamp != timestamp || publishedEndTimestamp != endTimestamp)) else { return }
         let activity: Any
         if let desiredChannel {
             var assets = ["large_image": "twitchy_icon", "large_text": "Twitchy"]
@@ -151,16 +179,24 @@ import Network
                 "type": 3,
                 "assets": assets,
                 "details": "Watching \(String(desiredChannel.prefix(100)))",
-                "timestamps": ["start": timestamp],
                 "buttons": [["label": "Get Twitchy", "url": "https://github.com/rafaelreverberi/Twitchy"]]
             ]
-            if let desiredTitle { payload["state"] = String(desiredTitle.prefix(128)) }
+            if let desiredRecordingKind {
+                payload["details"] = String((desiredTitle ?? desiredRecordingKind).prefix(128))
+                payload["state"] = String("\(desiredRecordingKind) · \(desiredChannel)".prefix(128))
+                if let endTimestamp { payload["timestamps"] = ["start": timestamp, "end": endTimestamp] }
+            } else {
+                payload["timestamps"] = ["start": timestamp]
+                if let desiredTitle { payload["state"] = String(desiredTitle.prefix(128)) }
+            }
             activity = payload
         } else {
             activity = NSNull()
         }
         publishedChannel = desiredChannel
         publishedTitle = desiredTitle
+        publishedRecordingKind = desiredRecordingKind
+        publishedEndTimestamp = endTimestamp
         publishedAvatar = desiredAvatar
         publishedChannelURL = desiredChannelURL
         publishedTimestamp = timestamp

@@ -199,6 +199,15 @@ struct RootView: View {
             }
         }
         .onChange(of: model.discordViewing) { _, _ in updateDiscordPresence() }
+        .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.timeJumpedNotification)) { notification in
+            guard let item = notification.object as? AVPlayerItem, item === model.playback.player.currentItem else { return }
+            updateDiscordPresence()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { notification in
+            guard model.discordViewing?.recordingKind != nil,
+                  let item = notification.object as? AVPlayerItem, item === model.playback.player.currentItem else { return }
+            model.discordPresence.stopWatching()
+        }
         .onChange(of: discordEnabled) { _, _ in updateDiscordPresence() }
         .onChange(of: discordApplicationID) { _, _ in updateDiscordPresence() }
         .onChange(of: model.playback.state) { _, state in if state == .failed { model.retryDesktopPlaybackIfNeeded() } }
@@ -207,7 +216,13 @@ struct RootView: View {
     }
     private func updateDiscordPresence() {
         let bundledID = DiscordPresence.defaultApplicationID
-        model.discordPresence.update(enabled: discordEnabled, applicationID: bundledID.isEmpty ? discordApplicationID : bundledID, viewing: model.discordViewing)
+        let viewing = model.discordViewing
+        var progress: DiscordPresence.Progress?
+        if let viewing, viewing.playing, viewing.recordingKind != nil, let item = model.playback.player.currentItem {
+            progress = .init(position: model.playback.player.currentTime().seconds, duration: item.duration.seconds)
+        }
+        model.discordPresence.update(enabled: discordEnabled, applicationID: bundledID.isEmpty ? discordApplicationID : bundledID,
+                                     viewing: viewing, progress: progress)
     }
     #endif
     #if !os(tvOS)
