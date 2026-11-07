@@ -301,7 +301,10 @@ private actor GatedProxy: HTTPTransport {
     player.resolvePlayback = { _, _, _ in calls += 1; throw URLError(.cannotConnectToHost) }
     player.recoveryLimit = { 1 }
     await player.start(request: .init(channelLogin: "channel"))
-    try await Task.sleep(for: .milliseconds(1200))
+    let deadline = ContinuousClock.now + .seconds(5)
+    while calls < 2, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(50))
+    }
     #expect(calls == 2)
     try await Task.sleep(for: .milliseconds(1100))
     #expect(calls == 2)
